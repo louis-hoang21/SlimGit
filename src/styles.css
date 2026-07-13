@@ -1,0 +1,1046 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --panel-bg: #ffffff;
+    --graph-stroke: #ffffff;
+  }
+  .dark {
+    --panel-bg: #1c1c20;
+    --graph-stroke: #1c1c20;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+  }
+  body {
+    @apply font-sans text-[12px] text-neutral-800 dark:text-zinc-200 bg-neutral-200 dark:bg-zinc-950 antialiased;
+    overflow: hidden;
+    user-select: none;
+  }
+  /* Inside the native Tauri window, stay transparent so the macOS vibrancy
+     behind the webview shows through. */
+  body.is-tauri,
+  body.is-tauri #root {
+    background: transparent;
+  }
+  /* Modern thin scrollbars */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-neutral-300 dark:bg-zinc-700 rounded-full;
+    border: 1px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-neutral-400 dark:bg-zinc-600;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+}
+
+@layer components {
+  /* ---------- Welcome ---------- */
+  .welcome {
+    @apply h-full grid grid-cols-2 bg-neutral-200 dark:bg-zinc-950;
+  }
+  .welcome-pane {
+    @apply min-w-0 flex items-center justify-center px-10;
+  }
+  .welcome-intro {
+    @apply bg-white dark:bg-zinc-900 border-r border-neutral-200 dark:border-zinc-800;
+  }
+  .welcome-kicker {
+    @apply text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-600 dark:text-blue-400 mb-3;
+  }
+  .welcome h1 {
+    @apply text-[44px] leading-tight font-bold tracking-tight text-neutral-900 dark:text-white;
+  }
+  .welcome-action {
+    @apply bg-neutral-100 dark:bg-zinc-950;
+  }
+  .welcome-action-inner {
+    @apply w-full max-w-[320px] flex flex-col gap-4 text-neutral-700 dark:text-zinc-300;
+  }
+  .welcome-action-inner svg {
+    @apply text-blue-600 dark:text-blue-400;
+  }
+  .welcome-action h2 {
+    @apply text-xl font-semibold text-neutral-900 dark:text-white;
+  }
+  .welcome p {
+    @apply mt-1 text-neutral-500 dark:text-zinc-400;
+  }
+  .welcome-open-btn {
+    @apply inline-flex w-fit items-center gap-2 px-3 py-1.5;
+  }
+
+  @media (max-width: 720px) {
+    .welcome {
+      @apply grid-cols-1;
+    }
+    .welcome-pane {
+      @apply px-7 py-10;
+    }
+    .welcome-intro {
+      @apply border-r-0 border-b;
+    }
+    .welcome h1 {
+      @apply text-4xl;
+    }
+  }
+
+  /* ---------- Buttons ---------- */
+  button {
+    @apply font-sans text-[12px] text-neutral-700 dark:text-zinc-200 bg-white dark:bg-zinc-800
+      border border-neutral-300 dark:border-zinc-600 rounded-md px-2.5 py-1 cursor-pointer
+      transition-colors;
+  }
+  button:hover:not(:disabled) {
+    @apply hover:bg-[rgb(151,188,248,0.28)] hover:border-[rgb(151,188,248,0.28)] disabled:hover:bg-transparent disabled:hover:border-transparent;
+  }
+  button:disabled {
+    @apply opacity-40 cursor-default;
+  }
+  button.primary {
+    @apply bg-blue-600 hover:bg-blue-500 border-blue-600 text-white;
+  }
+  button.danger {
+    @apply text-red-600 dark:text-red-400;
+  }
+  .spacer {
+    @apply flex-1;
+  }
+
+  /* ---------- App shell ---------- */
+  .sg-app {
+    @apply h-full flex flex-col bg-neutral-200 dark:bg-zinc-950;
+  }
+  /* Let the vibrancy show through the shell in the native window. */
+  .is-tauri .sg-app {
+    @apply bg-transparent;
+  }
+
+  /* ---------- Toolbar ---------- */
+  .sg-toolbar {
+    @apply grid grid-cols-[1fr_auto_1fr] items-center h-[55px] px-2 gap-0.5
+      bg-white dark:bg-zinc-900/70 backdrop-blur-xl
+      border-b border-neutral-200/70 dark:border-zinc-800/80;
+  }
+  /* Native macOS: translucent toolbar riding on the window vibrancy. */
+  .is-tauri .sg-toolbar {
+    @apply bg-white/55 dark:bg-zinc-900/35
+      border-b border-black/[0.08] dark:border-white/[0.08];
+  }
+  .tb-section {
+    @apply flex items-center min-w-0;
+  }
+  .tb-section-left {
+    @apply justify-start;
+  }
+  .tb-section-center {
+    @apply justify-center;
+  }
+  .tb-section-right {
+    @apply justify-end;
+  }
+  .tb-group {
+    @apply flex items-center gap-0.5 px-1.5 relative;
+  }
+  /* Subtle short divider between groups instead of a full-height hard line. */
+  .tb-group:not(:last-child)::after {
+    content: "";
+    @apply bg-neutral-200 dark:bg-zinc-700/70;
+    width: 1px;
+    height: 22px;
+    margin-left: 6px;
+    margin-right: -6px;
+    border-radius: 1px;
+  }
+  .tb-spacer {
+    @apply flex-1;
+  }
+  .tb-btn {
+    @apply flex flex-col items-center justify-center gap-[3px] min-w-[50px] px-2 py-1.5
+      bg-transparent border border-transparent rounded-lg font-medium
+      text-neutral-600 dark:text-zinc-300 transition-all duration-100;
+      height: 45px;
+  }
+  .tb-btn:hover:not(:disabled) {
+    @apply bg-neutral-900/[0.05] dark:bg-white/[0.06] text-neutral-900 dark:text-white;
+  }
+  .tb-btn:hover:not(:disabled) .tb-ico {
+    @apply text-neutral-800 dark:text-white;
+  }
+  .tb-btn:active:not(:disabled) {
+    @apply scale-95 bg-neutral-900/[0.09] dark:bg-white/[0.1];
+  }
+  .tb-btn:disabled {
+    @apply opacity-30 cursor-default;
+  }
+  .tb-ico {
+    @apply leading-none text-neutral-500 dark:text-zinc-400 transition-colors;
+  }
+  .tb-lbl {
+    @apply text-[10.5px] tracking-tight flex items-center gap-1;
+  }
+  .tb-badge {
+    @apply inline-flex items-center justify-center min-w-[15px] h-[15px] px-1
+      rounded-full text-white text-[9px] font-bold leading-none backdrop-blur-md;
+  }
+  /* Badge color palette — pass one to TB(): yellow | red | purple | green | blue. */
+  .tb-badge-yellow {
+    @apply bg-amber-500/80 shadow-[0_0_0_0.5px_rgba(180,120,0,0.35)];
+  }
+  .tb-badge-red {
+    @apply bg-red-500/80 shadow-[0_0_0_0.5px_rgba(160,20,20,0.35)];
+  }
+  .tb-badge-purple {
+    @apply bg-purple-500/80 shadow-[0_0_0_0.5px_rgba(110,40,160,0.35)];
+  }
+  .tb-badge-green {
+    @apply bg-emerald-500/80 shadow-[0_0_0_0.5px_rgba(20,120,70,0.35)];
+  }
+  .tb-badge-blue {
+    @apply bg-blue-600/85 shadow-[0_0_0_0.5px_rgba(20,60,160,0.35)];
+  }
+
+  /* ---------- Main split ---------- */
+  .sg-main {
+    @apply flex-1 flex min-h-0 p-1.5 gap-1.5;
+  }
+  .sg-left {
+    @apply w-[268px] flex-shrink-0 flex flex-col gap-1.5;
+  }
+  .sg-right {
+    @apply flex-1 min-w-0 flex flex-col gap-1.5;
+  }
+
+  /* ---------- Panel ---------- */
+  .panel {
+    @apply flex flex-col min-h-0 bg-white dark:bg-[#1c1c20]
+      border border-neutral-200 dark:border-zinc-800 rounded-lg overflow-hidden
+      shadow-sm;
+  }
+  /* Native macOS: frosted panels floating over the window vibrancy, with
+     hairline borders instead of hard 1px lines. */
+  .is-tauri .panel {
+    @apply bg-white/75 dark:bg-[#1c1c20]/65 backdrop-blur-xl
+      border-black/[0.08] dark:border-white/[0.08]
+      shadow-[0_1px_3px_rgba(0,0,0,0.06)] dark:shadow-[0_1px_3px_rgba(0,0,0,0.35)];
+  }
+  .is-tauri .panel-hd {
+    @apply border-black/[0.08] dark:border-white/[0.08];
+  }
+  .panel-hd {
+    @apply flex items-center h-[32px] px-2.5 flex-shrink-0 text-[11px] font-semibold
+      text-[#0d1117] bg-[rgb(245_158_11_/_11%)]
+      border-b border-neutral-200 dark:border-zinc-800 uppercase tracking-wide;
+  }
+  .panel-hd .x {
+    @apply ml-1.5 text-neutral-300 dark:text-zinc-600 font-normal cursor-pointer;
+  }
+  .panel-hd .spacer {
+    @apply flex-1;
+  }
+  .panel-hd .hd-tool {
+    @apply text-neutral-400 dark:text-zinc-500 cursor-pointer px-1;
+  }
+  .panel-hd .hd-note {
+    @apply text-neutral-400 dark:text-zinc-500 font-normal normal-case;
+  }
+  .panel-bd {
+    @apply flex-1 overflow-auto min-h-0;
+  }
+  .files-panel-bd:focus {
+    outline: none;
+  }
+
+  .sg-repos {
+    @apply flex-[1_1_45%];
+  }
+  .sg-branches {
+    @apply flex-[1_1_55%];
+  }
+
+  /* ---------- Vertical splitter ---------- */
+  .v-splitter {
+    @apply h-1 flex-shrink-0 cursor-row-resize rounded transition-colors
+      bg-[rgb(245_158_11_/_11%)];
+  }
+  .v-splitter:hover,
+  .v-splitter.dragging {
+    @apply bg-blue-400/60;
+  }
+
+  /* ---------- Repositories tree ---------- */
+  .tree-root {
+    @apply flex items-center gap-1.5 px-2.5 py-1 text-neutral-500 dark:text-zinc-400;
+  }
+  .tree-item {
+    @apply flex items-center gap-1.5 py-1 pl-6 pr-2.5 cursor-pointer whitespace-nowrap
+      transition-colors hover:bg-neutral-100 dark:hover:bg-zinc-800;
+  }
+  .tree-item.active {
+    @apply bg-blue-50 dark:bg-blue-500/15 font-semibold text-blue-700 dark:text-blue-300;
+  }
+  .tree-item .ico {
+    @apply text-neutral-400 dark:text-zinc-500;
+  }
+  .tree-item .name {
+    @apply overflow-hidden text-ellipsis;
+  }
+  .tree-item .br {
+    @apply text-neutral-400 dark:text-zinc-500 font-normal;
+  }
+
+  /* ---------- Branches list ---------- */
+  .br-group-title {
+    @apply px-2.5 pt-2 pb-1 text-[10px] uppercase tracking-wider text-neutral-400 dark:text-zinc-500 font-semibold;
+  }
+  .br-ghead {
+    @apply flex items-center gap-1 px-2 py-1.5 cursor-pointer select-none font-semibold
+      text-neutral-700 dark:text-zinc-200 transition-colors
+      hover:bg-neutral-100 dark:hover:bg-zinc-800;
+  }
+  .br-ghead .cnt {
+    @apply text-neutral-400 dark:text-zinc-500 font-normal;
+  }
+  .br-ghead svg {
+    @apply text-neutral-400 dark:text-zinc-500;
+  }
+  .br-folder {
+    @apply flex items-center gap-1 py-1 pr-2.5 cursor-pointer whitespace-nowrap
+      text-neutral-600 dark:text-zinc-300 transition-colors
+      hover:bg-neutral-100 dark:hover:bg-zinc-800;
+  }
+  .br-folder svg {
+    @apply text-neutral-400 dark:text-zinc-500 flex-shrink-0;
+  }
+  .br-folder .name {
+    @apply overflow-hidden text-ellipsis;
+  }
+  .br-item {
+    @apply flex items-center gap-1.5 px-2.5 py-1 cursor-pointer whitespace-nowrap
+      transition-colors hover:bg-neutral-100 dark:hover:bg-zinc-800;
+  }
+  .br-item.current {
+    @apply bg-blue-50 dark:bg-blue-500/15 font-semibold;
+  }
+  .br-item .ico {
+    @apply text-neutral-400 dark:text-zinc-500 w-3.5 text-center;
+  }
+  .br-item.current .ico {
+    @apply text-green-600 dark:text-green-400;
+  }
+  .br-item .name {
+    @apply flex-1 overflow-hidden text-ellipsis;
+  }
+  .br-item .track {
+    @apply font-mono text-[10px] text-amber-600 dark:text-amber-400;
+  }
+  .br-item .eq {
+    @apply text-neutral-400 dark:text-zinc-500 font-normal;
+  }
+  .br-item .gone {
+    @apply font-mono text-[11px] text-red-500 dark:text-red-400 font-semibold;
+  }
+
+  /* ---------- Search box (panel headers) ---------- */
+  .search {
+    @apply flex items-center gap-1 px-1.5 mr-2 rounded border normal-case
+      bg-white dark:bg-zinc-800 border-neutral-200 dark:border-zinc-700;
+    height: 22px;
+  }
+  .search svg {
+    @apply text-neutral-400 dark:text-zinc-500 flex-shrink-0;
+  }
+  .search input {
+    @apply bg-transparent border-0 outline-none text-[9px] w-[140px]
+      text-neutral-700 dark:text-zinc-200 font-normal;
+    text-transform: none;
+  }
+  .search input::placeholder {
+    @apply text-neutral-400 dark:text-zinc-500;
+  }
+  .search .clr {
+    @apply cursor-pointer hover:text-red-500;
+  }
+
+  /* ---------- Checkout modal ---------- */
+  .co-warn {
+    @apply text-amber-700 dark:text-amber-300;
+  }
+  .co-warn.ok {
+    @apply text-neutral-700 dark:text-zinc-200;
+  }
+  .co-opts {
+    @apply list-disc pl-5 flex flex-col gap-1 text-neutral-600 dark:text-zinc-300;
+  }
+  .co-opts .danger {
+    @apply text-red-600 dark:text-red-400;
+  }
+
+  /* ---------- Files table ---------- */
+  .ftable {
+    @apply w-full border-collapse text-[12px];
+    table-layout: fixed;
+  }
+  .ftable thead th {
+    @apply sticky top-0 text-left font-semibold text-neutral-500 dark:text-zinc-400
+      bg-neutral-50 dark:bg-zinc-900/80 border-b border-neutral-200 dark:border-zinc-800
+      px-2 py-1.5 whitespace-nowrap;
+    position: sticky;
+  }
+  .ftable thead th .col-resizer {
+    @apply absolute top-0 right-0 h-full w-1.5 cursor-col-resize;
+  }
+  .ftable thead th .col-resizer:hover {
+    @apply bg-blue-400/60;
+  }
+  .ftable tbody tr {
+    @apply cursor-pointer transition-colors border-b border-neutral-100 dark:border-zinc-800;
+  }
+  .ftable tbody tr:nth-child(even) {
+    @apply bg-neutral-50 dark:bg-zinc-800/40;
+  }
+  .ftable tbody tr:hover {
+    @apply bg-blue-50 dark:bg-zinc-700/60;
+  }
+  .ftable tbody tr.sel {
+    @apply bg-blue-100 dark:bg-blue-500/30;
+  }
+  .ftable td {
+    @apply px-2 py-1.5 whitespace-nowrap overflow-hidden text-ellipsis;
+  }
+  .fname {
+    @apply flex items-center gap-1.5;
+  }
+  .fdot {
+    @apply w-2.5 h-2.5 rounded-sm flex-shrink-0 inline-block;
+  }
+  .state-Modified {
+    @apply text-blue-600 dark:text-blue-400;
+  }
+  .state-New,
+  .state-Added,
+  .state-Untracked {
+    @apply text-green-600 dark:text-green-400;
+  }
+  .state-Deleted,
+  .state-Missing {
+    @apply text-red-600 dark:text-red-400;
+  }
+  .state-Renamed,
+  .state-Copied {
+    @apply text-violet-600 dark:text-violet-400;
+  }
+  .state-Conflicted {
+    @apply text-red-600 dark:text-red-400 font-semibold;
+  }
+  .dot-Modified {
+    @apply bg-blue-500;
+  }
+  .dot-New,
+  .dot-Added,
+  .dot-Untracked {
+    @apply bg-green-500;
+  }
+  .dot-Deleted,
+  .dot-Missing {
+    @apply bg-red-500;
+  }
+  .dot-Renamed,
+  .dot-Copied {
+    @apply bg-violet-500;
+  }
+  .dot-Conflicted {
+    @apply bg-red-500;
+  }
+  .staged-flag {
+    @apply text-green-600 dark:text-green-400 ml-1 text-[10px];
+  }
+  .empty-msg {
+    @apply p-4 text-neutral-400 dark:text-zinc-500 text-center;
+  }
+
+  /* ---------- Changes / diff ---------- */
+  .changes-body {
+    @apply flex-1 flex min-h-0;
+  }
+  /* Two side-by-side diff panes: working tree (left) vs branch compare (right). */
+  .changes-split {
+    @apply flex-1 flex min-w-0 min-h-0;
+  }
+  .changes-pane {
+    @apply flex-1 flex flex-col min-w-0 min-h-0;
+  }
+  .changes-pane + .changes-pane {
+    @apply border-l border-neutral-200 dark:border-zinc-800;
+  }
+  .cmp-hd {
+    @apply flex items-center gap-2 h-[24px] px-2.5 flex-shrink-0
+      text-[10px] font-semibold uppercase tracking-wide
+      text-neutral-500 dark:text-zinc-400
+      bg-neutral-50 dark:bg-zinc-900/60
+      border-b border-neutral-200 dark:border-zinc-800;
+  }
+  .cmp-hd .cmp-sub {
+    @apply font-mono text-[10px] font-normal normal-case
+      text-neutral-400 dark:text-zinc-500 truncate;
+  }
+  .cmp-body {
+    @apply flex-1 flex min-w-0 min-h-0;
+  }
+  .head-gutter {
+    @apply w-5 flex-shrink-0 bg-neutral-50 dark:bg-zinc-900 border-r border-neutral-200 dark:border-zinc-800
+      flex items-center justify-center;
+  }
+  .head-gutter span {
+    @apply text-[10px] text-neutral-400 dark:text-zinc-500 tracking-widest;
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+  }
+  .diff {
+    @apply flex-1 flex flex-col min-w-0;
+  }
+  .diff-title {
+    @apply hidden;
+  }
+  .diff-empty {
+    @apply p-5 text-neutral-400 dark:text-zinc-500 text-center;
+  }
+  .diff-body {
+    flex: 1;
+    overflow: auto;
+    font-family: var(--mono, ui-monospace, monospace);
+    font-size: 12px;
+    line-height: 1.55;
+  }
+  /* GitHub-inspired code appearance, selected by the app/system theme. */
+  .diff-body.code-light {
+    background: #ffffff;
+    color: #24292f;
+    --t-kw: #cf222e;
+    --t-fn: #8250df;
+    --t-type: #953800;
+    --t-str: #0a3069;
+    --t-num: #0550ae;
+    --t-com: #6e7781;
+    --t-punct: #57606a;
+    --ln-bg: #f6f8fa;
+    --ln-fg: #8c959f;
+    --ln-border: #d8dee4;
+    --add-bg: #dafbe1;
+    --del-bg: #ffebe9;
+    --ctx-bg: #ffffff;
+    --hunk-bg: #ddf4ff;
+    --hunk-fg: #0969da;
+    --add-sign: #1a7f37;
+    --del-sign: #cf222e;
+  }
+  .diff-body.code-dark {
+    background: #0d1117;
+    color: #c9d1d9;
+    --t-kw: #ff7b72;
+    --t-fn: #d2a8ff;
+    --t-type: #d2a8ff;
+    --t-str: #a5d6ff;
+    --t-num: #79c0ff;
+    --t-com: #8b949e;
+    --t-punct: #8b949e;
+    --ln-bg: #161b22;
+    --ln-fg: #6e7681;
+    --ln-border: #21262d;
+    --ctx-bg: #0d1117;
+    --add-bg: rgba(46, 160, 67, 0.15);
+    --del-bg: rgba(248, 81, 73, 0.15);
+    --hunk-bg: rgba(56, 139, 253, 0.15);
+    --hunk-fg: #79c0ff;
+    --add-sign: #3fb950;
+    --del-sign: #f85149;
+  }
+  .tok-kw {
+    color: var(--t-kw);
+  }
+  .tok-fn {
+    color: var(--t-fn);
+  }
+  .tok-type {
+    color: var(--t-type);
+  }
+  .tok-str {
+    color: var(--t-str);
+  }
+  .tok-num {
+    color: var(--t-num);
+  }
+  .tok-com {
+    color: var(--t-com);
+    font-style: italic;
+  }
+  .tok-punct {
+    color: var(--t-punct);
+  }
+  .dl {
+    display: flex;
+    white-space: pre;
+    background: var(--ctx-bg);
+  }
+  .dl .ln {
+    width: 40px;
+    flex-shrink: 0;
+    text-align: right;
+    padding-right: 7px;
+    color: var(--ln-fg);
+    background: var(--ln-bg);
+    border-right: 1px solid var(--ln-border);
+    user-select: none;
+  }
+  .dl .sign {
+    width: 18px;
+    flex-shrink: 0;
+    text-align: center;
+    user-select: none;
+    color: var(--ln-fg);
+  }
+  .dl .dt {
+    padding-left: 6px;
+    padding-right: 10px;
+    flex: 1;
+  }
+  .dl-add {
+    background: var(--add-bg);
+  }
+  .dl-add .ln,
+  .dl-add .sign,
+  .dl-add .dt {
+    background: var(--add-bg);
+  }
+  .dl-add .sign {
+    color: var(--add-sign);
+    font-weight: 700;
+  }
+  .dl-del {
+    background: var(--del-bg);
+  }
+  .dl-del .ln,
+  .dl-del .sign,
+  .dl-del .dt {
+    background: var(--del-bg);
+  }
+  .dl-del .sign {
+    color: var(--del-sign);
+    font-weight: 700;
+  }
+  .dl-hunk {
+    background: var(--hunk-bg);
+    color: var(--hunk-fg);
+  }
+  .dl-hunk .dt {
+    color: var(--hunk-fg);
+  }
+  .dl-meta {
+    color: var(--t-com);
+  }
+
+  /* ---------- Journal ---------- */
+  .journal-wt {
+    @apply flex items-center gap-2 px-2.5 py-1.5 cursor-pointer border-b border-neutral-200 dark:border-zinc-800
+      bg-neutral-50 dark:bg-zinc-900/60 transition-colors hover:bg-neutral-100 dark:hover:bg-zinc-800;
+  }
+  .journal-wt.sel {
+    @apply bg-blue-100 dark:bg-blue-500/25;
+  }
+  .journal-wt .wt-ico {
+    @apply text-amber-500;
+  }
+  .journal-wt b {
+    @apply text-neutral-800 dark:text-zinc-100;
+  }
+  .journal-scroll {
+    @apply overflow-auto flex-1 min-h-0;
+  }
+  .graph {
+    @apply relative;
+  }
+  .graph-rows {
+    @apply relative;
+  }
+  /* Draw the graph SVG above the rows so zebra backgrounds don't hide the
+     lanes; pointer-events none lets clicks fall through to the rows. */
+  .graph-svg {
+    @apply z-10;
+    pointer-events: none;
+  }
+  .grow {
+    @apply flex items-center gap-2.5 pr-3 cursor-pointer whitespace-nowrap text-[12px]
+      border-b border-neutral-100 dark:border-zinc-800/70
+      transition-colors hover:bg-blue-50 dark:hover:bg-zinc-700/50;
+  }
+  .grow:nth-child(even) {
+    @apply bg-neutral-50 dark:bg-zinc-800/40;
+  }
+  .grow.sel {
+    @apply bg-blue-100 dark:bg-blue-500/30;
+  }
+  .c-subject {
+    @apply flex-1 overflow-hidden text-ellipsis;
+  }
+  .c-author {
+    @apply text-neutral-500 dark:text-zinc-400 w-[130px] overflow-hidden text-ellipsis;
+  }
+  .c-hash {
+    @apply text-neutral-400 dark:text-zinc-500 font-mono w-[58px];
+  }
+  .c-date {
+    @apply text-neutral-400 dark:text-zinc-500 w-[150px] text-right text-[11px];
+  }
+  .ref {
+    @apply inline-block px-1.5 mr-1.5 rounded border border-neutral-300 dark:border-zinc-600
+      bg-neutral-100 dark:bg-zinc-800 text-[11px] align-middle;
+  }
+  .ref-head {
+    @apply bg-green-100 dark:bg-green-500/20 border-green-400 dark:border-green-600 font-semibold
+      text-green-800 dark:text-green-300;
+  }
+  .ref-remote {
+    @apply bg-amber-50 dark:bg-amber-500/15 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300;
+  }
+  .ref-tag {
+    @apply border-amber-400 text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10;
+  }
+
+  /* ---------- Status bar ---------- */
+  .sg-status {
+    @apply flex items-center gap-2.5 h-[24px] px-3 bg-white dark:bg-zinc-900
+      border-t border-neutral-200 dark:border-zinc-800 text-neutral-500 dark:text-zinc-400 text-[11px];
+  }
+  .sg-status .mono {
+    @apply font-mono;
+  }
+
+  /* ---------- Banner ---------- */
+  .banner {
+    @apply flex items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-500/15
+      border-b border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300;
+  }
+  .banner button {
+    @apply px-2.5 py-1;
+  }
+
+  /* ---------- Context menu ---------- */
+  .ctx-menu {
+    @apply fixed z-[100] bg-white dark:bg-zinc-800 border border-neutral-200 dark:border-zinc-700
+      rounded-lg p-1 min-w-[210px] shadow-xl;
+  }
+  .ctx-item {
+    @apply flex items-center px-3 py-1.5 rounded-md cursor-pointer transition-colors;
+  }
+  .ctx-item:hover:not(.disabled) {
+    @apply bg-blue-600 text-white;
+  }
+  .ctx-item .sc {
+    @apply ml-auto text-neutral-400 dark:text-zinc-500 text-[11px] pl-6;
+  }
+  .ctx-item:hover:not(.disabled) .sc {
+    @apply text-blue-100;
+  }
+  .ctx-item.danger {
+    @apply text-red-600 dark:text-red-400;
+  }
+  .ctx-item.danger:hover:not(.disabled) {
+    @apply bg-red-600 text-white;
+  }
+  .ctx-item.disabled {
+    @apply text-neutral-400 dark:text-zinc-600 cursor-default;
+  }
+  .ctx-sep {
+    @apply h-px bg-neutral-200 dark:bg-zinc-700 my-1 mx-1.5;
+  }
+
+  /* ---------- Modal ---------- */
+  .modal-back {
+    @apply fixed inset-0 bg-black/40 flex items-center justify-center z-[300] backdrop-blur-sm;
+  }
+  .modal {
+    @apply w-[620px] max-w-[90%] bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-700
+      rounded-xl shadow-2xl overflow-hidden;
+  }
+  .modal-hd {
+    @apply px-4 py-3 font-semibold bg-neutral-50 dark:bg-zinc-800 border-b border-neutral-200 dark:border-zinc-700;
+  }
+  .modal-bd {
+    @apply p-4 flex flex-col gap-2.5;
+  }
+  .modal-bd textarea {
+    @apply w-full h-[120px] resize-y bg-white dark:bg-zinc-950 border border-neutral-300 dark:border-zinc-700
+      rounded-md p-2 font-mono text-[12px] text-neutral-800 dark:text-zinc-100
+      focus:outline-none focus:border-blue-500;
+  }
+  .modal-staged {
+    @apply max-h-[130px] overflow-auto border border-neutral-200 dark:border-zinc-700 rounded-md
+      bg-neutral-50 dark:bg-zinc-950 p-1;
+  }
+  .modal-staged .row {
+    @apply flex gap-1.5 px-1 py-0.5 font-mono text-[11px];
+  }
+  .modal-ft {
+    @apply flex items-center gap-2.5 px-4 py-2.5 border-t border-neutral-200 dark:border-zinc-700
+      bg-neutral-50 dark:bg-zinc-800;
+  }
+  .modal-ft label {
+    @apply flex items-center gap-1.5 text-neutral-500 dark:text-zinc-400;
+  }
+
+  /* ---------- Conflict ---------- */
+  .conflict {
+    @apply flex-1 flex flex-col min-h-0;
+  }
+  .conflict-bar {
+    @apply flex items-center gap-2 px-2.5 py-1.5 bg-red-50 dark:bg-red-500/15
+      border-b border-red-300 dark:border-red-700;
+  }
+  .conflict-file {
+    @apply text-red-600 dark:text-red-400 font-semibold;
+  }
+  .conflict-editor {
+    @apply flex-1 resize-none bg-white dark:bg-[#1c1c20] text-neutral-800 dark:text-zinc-100
+      border-0 p-2.5 font-mono text-[12px] leading-[1.5] focus:outline-none;
+  }
+  .conflict-hint {
+    @apply px-2.5 py-1.5 bg-amber-50 dark:bg-amber-500/15 text-amber-800 dark:text-amber-300 text-[11px];
+  }
+
+  /* ---------- Logs Panel ---------- */
+  .logs-panel {
+    @apply flex flex-col bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-700
+      rounded-xl shadow-2xl overflow-hidden relative;
+  }
+  .logs-hd {
+    @apply flex items-center gap-2 px-3 border-b border-neutral-200 dark:border-zinc-700
+      bg-neutral-50 dark:bg-zinc-800 shrink-0;
+    height: 42px;
+  }
+  .logs-title {
+    @apply font-semibold text-[13px] text-neutral-800 dark:text-zinc-100;
+  }
+  /* Traffic light buttons */
+  .logs-traffic-lights {
+    @apply flex items-center gap-1.5 mr-1;
+  }
+  .logs-tl {
+    @apply rounded-full outline-none cursor-pointer flex items-center justify-center shrink-0 border-none appearance-none;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+  }
+  .logs-tl:disabled {
+    @apply cursor-default;
+  }
+  .logs-tl-close,
+  .logs-tl-close:hover,
+  .logs-tl-close:active,
+  .logs-tl-close:focus {
+    background-color: #f05252 !important;
+  }
+  .logs-tl-green,
+  .logs-tl-green:hover,
+  .logs-tl-green:active,
+  .logs-tl-green:focus {
+    background-color: #40c057 !important;
+  }
+  .logs-tl-spinning {
+    animation: tl-pulse 0.8s ease-in-out infinite alternate;
+  }
+  @keyframes tl-pulse {
+    from { opacity: 1; }
+    to { opacity: 0.4; }
+  }
+  .logs-branch-sel {
+    @apply text-[12px] bg-white dark:bg-zinc-700 border border-neutral-300 dark:border-zinc-600
+      rounded-md px-2 py-1 text-neutral-800 dark:text-zinc-100
+      focus:outline-none focus:border-blue-500;
+    max-width: 220px;
+  }
+  .logs-search {
+    @apply flex items-center gap-1.5 bg-white dark:bg-zinc-800 border border-neutral-300 dark:border-zinc-600
+      rounded-md px-2 py-1 flex-1;
+    max-width: 280px;
+  }
+  .logs-search-ico {
+    @apply text-neutral-400 dark:text-zinc-500 shrink-0;
+  }
+  .logs-search-inp {
+    @apply bg-transparent border-none outline-none text-[12px] text-neutral-800 dark:text-zinc-100
+      placeholder-neutral-400 dark:placeholder-zinc-500 w-full;
+  }
+  .logs-cols-hd {
+    @apply flex items-center px-3 text-[11px] font-medium text-neutral-500 dark:text-zinc-400
+      border-b border-neutral-200 dark:border-zinc-700 bg-neutral-50 dark:bg-zinc-800/60 shrink-0;
+    height: 28px;
+    gap: 0.625rem;
+  }
+  .logs-graph-wrap {
+    @apply overflow-auto shrink-0;
+  }
+  .logs-vsplit {
+    @apply shrink-0 cursor-row-resize bg-neutral-200 dark:bg-zinc-700 hover:bg-blue-400 transition-colors;
+    height: 4px;
+  }
+  .logs-detail {
+    @apply flex shrink-0 overflow-hidden;
+  }
+  .logs-detail-empty {
+    @apply items-center justify-center text-[13px] text-neutral-400 dark:text-zinc-500;
+  }
+  .logs-files {
+    @apply flex flex-col shrink-0 border-r border-neutral-200 dark:border-zinc-700 overflow-hidden;
+  }
+  .logs-hsplit {
+    @apply shrink-0 cursor-col-resize bg-neutral-200 dark:bg-zinc-700 hover:bg-blue-400 transition-colors;
+    width: 4px;
+  }
+  .logs-diff {
+    @apply flex flex-col overflow-hidden;
+  }
+  .logs-pane-hd {
+    @apply px-3 py-1.5 text-[11px] font-semibold text-neutral-500 dark:text-zinc-400
+      border-b border-neutral-200 dark:border-zinc-700 bg-neutral-50 dark:bg-zinc-800/60
+      whitespace-nowrap overflow-hidden text-ellipsis shrink-0;
+  }
+  .logs-files-scroll {
+    @apply overflow-auto flex-1 min-h-0;
+  }
+  .logs-file-row {
+    @apply flex items-center gap-1.5 px-2 py-1 cursor-pointer text-[12px]
+      hover:bg-blue-50 dark:hover:bg-zinc-700/60 transition-colors
+      border-b border-neutral-100 dark:border-zinc-800;
+  }
+  .logs-file-row.sel {
+    @apply bg-blue-100 dark:bg-blue-500/30;
+  }
+  .logs-file-name {
+    @apply overflow-hidden text-ellipsis whitespace-nowrap flex-1;
+  }
+  .logs-empty {
+    @apply flex items-center justify-center text-[13px] text-neutral-400 dark:text-zinc-500;
+    height: 80px;
+  }
+  .logs-resize-se {
+    @apply absolute bottom-0 right-0 cursor-se-resize;
+    width: 16px;
+    height: 16px;
+    background: linear-gradient(135deg, transparent 50%, var(--tw-border-opacity, theme(colors.neutral.300)) 50%);
+  }
+  .dark .logs-resize-se {
+    background: linear-gradient(135deg, transparent 50%, theme(colors.zinc.600) 50%);
+  }
+
+  /* ---------- Dialog (confirm / input) ---------- */
+  .dlg {
+    @apply flex flex-col bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-700
+      rounded-xl shadow-2xl overflow-hidden;
+    min-width: 320px;
+    max-width: min(480px, 90vw);
+  }
+  .dlg-hd {
+    @apply flex items-start gap-3 px-5 py-4;
+  }
+  .dlg-hd-input {
+    @apply border-b border-neutral-200 dark:border-zinc-700 pb-3;
+  }
+  .dlg-ico {
+    @apply shrink-0 mt-0.5;
+  }
+  .dlg-ico-danger {
+    @apply text-red-500;
+  }
+  .dlg-ico-info {
+    @apply text-blue-500;
+  }
+  .dlg-msg {
+    @apply text-[13px] text-neutral-800 dark:text-zinc-100 leading-snug;
+  }
+  .dlg-title {
+    @apply text-[13px] font-semibold text-neutral-800 dark:text-zinc-100;
+  }
+  .dlg-body {
+    @apply px-5 py-3;
+  }
+  .dlg-input {
+    @apply w-full bg-white dark:bg-zinc-800 border border-neutral-300 dark:border-zinc-600
+      rounded-lg px-3 py-2 text-[13px] text-neutral-800 dark:text-zinc-100
+      placeholder-neutral-400 dark:placeholder-zinc-500
+      focus:outline-none focus:border-blue-500 dark:focus:border-blue-500;
+  }
+  .dlg-ft {
+    @apply flex items-center justify-end gap-2 px-5 py-3
+      border-t border-neutral-200 dark:border-zinc-700
+      bg-neutral-50 dark:bg-zinc-800/60;
+  }
+  .dlg-btn {
+    @apply px-4 py-1.5 rounded-lg text-[13px] font-medium border border-neutral-300 dark:border-zinc-600
+      bg-white dark:bg-zinc-700 text-neutral-700 dark:text-zinc-200
+      hover:bg-neutral-100 dark:hover:bg-zinc-600 transition-colors cursor-pointer;
+  }
+  .dlg-btn-primary {
+    @apply bg-blue-600 border-blue-600 text-white hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 dark:border-blue-600;
+  }
+  .dlg-btn-danger {
+    @apply bg-red-600 border-red-600 text-white hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-700 dark:border-red-600;
+  }
+  .dlg-btn:disabled {
+    @apply opacity-40 cursor-default;
+  }
+
+  /* ---------- Toast ---------- */
+  .toast-v2 {
+    @apply fixed top-6 left-1/2 -translate-x-1/2 z-[500]
+      rounded-xl overflow-hidden shadow-2xl;
+    max-width: min(640px, 80vw);
+  }
+  .toast-ok {
+    @apply bg-emerald-500;
+    width: max-content;
+  }
+  .toast-err {
+    @apply bg-red-500;
+    min-width: 320px;
+  }
+  .toast-body {
+    @apply flex items-center gap-2.5 px-4 text-white;
+    height: 44px;
+  }
+  .toast-err .toast-body {
+    @apply items-start py-3;
+    height: auto;
+  }
+  .toast-icon {
+    @apply shrink-0;
+  }
+  .toast-err .toast-icon {
+    @apply mt-px;
+  }
+  .toast-msg {
+    @apply text-[13px] font-medium leading-snug whitespace-pre-wrap break-words;
+  }
+  .toast-close {
+    @apply shrink-0 opacity-70 hover:opacity-100 transition-opacity
+      bg-transparent border-none cursor-pointer text-white p-0 ml-1;
+  }
+  .toast-err .toast-close {
+    @apply mt-px;
+  }
+  .toast-bar {
+    @apply h-[3px] bg-white/40 transition-none;
+  }
+}
