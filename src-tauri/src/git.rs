@@ -134,6 +134,30 @@ pub fn repo_toplevel(path: &str) -> Result<String, String> {
     Ok(out.trim().to_string())
 }
 
+/// Return immediate child directories that are git repos.
+pub fn find_repos_in_dir(path: &str) -> Vec<String> {
+    let dir = match std::fs::read_dir(path) {
+        Ok(d) => d,
+        Err(_) => return vec![],
+    };
+    let mut repos = Vec::new();
+    for entry in dir.flatten() {
+        let p = entry.path();
+        if p.is_dir() {
+            if let Some(s) = p.to_str() {
+                if is_git_repo(s) {
+                    if let Ok(top) = repo_toplevel(s) {
+                        if !repos.contains(&top) {
+                            repos.push(top);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    repos
+}
+
 // ---------- Status ----------
 
 pub fn status(repo: &str) -> Result<StatusResult, String> {
@@ -425,8 +449,8 @@ pub fn commit_file_diff(repo: &str, hash: &str, path: &str) -> Result<String, St
 
 pub fn branch_compare_file_diff(repo: &str, path: &str) -> Result<BranchCompareDiff, String> {
     let base = infer_base_branch(repo)?;
-    let spec = format!("{base}...HEAD");
-    let diff = run(repo, &["diff", &spec, "--", path])?;
+    // Compare working tree (including uncommitted changes) against base branch
+    let diff = run(repo, &["diff", &base, "--", path])?;
     Ok(BranchCompareDiff {
         base_branch: base,
         diff,
@@ -653,6 +677,17 @@ pub fn fetch(repo: &str) -> Result<String, String> {
 }
 
 pub fn pull(repo: &str) -> Result<String, String> {
+    // No upstream → nothing to pull
+    let upstream = run(repo, &["rev-parse", "--abbrev-ref", "@{u}"]);
+    if upstream.is_err() {
+        return Ok("No remote tracking branch — nothing to pull.".into());
+    }
+    // Upstream exists but no new commits → skip to avoid rebase-with-unstaged-changes error
+    let ahead = run(repo, &["log", "HEAD..@{u}", "--oneline"])
+        .unwrap_or_default();
+    if ahead.trim().is_empty() {
+        return Ok("Already up to date.".into());
+    }
     run_combined(repo, &["pull"])
 }
 

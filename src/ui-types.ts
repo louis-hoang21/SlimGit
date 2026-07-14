@@ -9,7 +9,11 @@ export interface RepoRef {
   path: string;
   name: string;
   branch: string;
+  addedAt?: number;
+  lastActiveAt?: number;
 }
+
+export type RepoSortKey = "name" | "added" | "recent";
 
 export interface MenuItem {
   label?: string;

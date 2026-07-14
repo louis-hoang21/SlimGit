@@ -3,7 +3,7 @@ import { Search, X, RotateCw } from "lucide-react";
 import { CommitInfo, BranchInfo, DiffFile } from "../types";
 import { computeGraph, GRAPH_COLORS, laneColor } from "../graph";
 import DiffView from "./DiffView";
-import ContextMenu from "./ContextMenu";
+import ContextMenu from "./common/ContextMenu";
 import type { Menu } from "../ui-types";
 import { api } from "../api";
 

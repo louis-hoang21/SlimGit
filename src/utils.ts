@@ -36,7 +36,19 @@ export function buildBranchTree(
       }
     });
   }
+  sortBranchNodes(root.children);
   return root.children;
+}
+
+// Folders (prefix groups) first, then leaf branches; alphabetical within each.
+function sortBranchNodes(nodes: BNode[]) {
+  nodes.sort((a, b) => {
+    const aFolder = !a.branch;
+    const bFolder = !b.branch;
+    if (aFolder !== bFolder) return aFolder ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  for (const n of nodes) sortBranchNodes(n.children);
 }
 
 export function dirOf(p: string): string {

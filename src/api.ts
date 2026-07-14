@@ -19,6 +19,7 @@ function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
 export const api = {
   isRepo: (path: string) => invoke<boolean>("is_repo", { path }),
   toplevel: (path: string) => invoke<string>("toplevel", { path }),
+  findReposInDir: (path: string) => invoke<string[]>("find_repos_in_dir", { path }),
   status: (repo: string) => invoke<StatusResult>("get_status", { repo }),
   diff: (repo: string, path: string, staged: boolean, untracked: boolean) =>
     invoke<string>("get_diff", { repo, path, staged, untracked }),

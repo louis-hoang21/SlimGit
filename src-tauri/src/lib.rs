@@ -15,6 +15,11 @@ fn toplevel(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn find_repos_in_dir(path: String) -> Vec<String> {
+    git::find_repos_in_dir(&path)
+}
+
+#[tauri::command]
 fn get_status(repo: String) -> Result<StatusResult, String> {
     git::status(&repo)
 }
@@ -375,6 +380,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             is_repo,
             toplevel,
+            find_repos_in_dir,
             get_status,
             get_diff,
             stage,

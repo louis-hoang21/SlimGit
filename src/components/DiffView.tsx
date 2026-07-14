@@ -5,6 +5,8 @@ interface Props {
   title?: string;
   empty?: string;
   theme?: "light" | "dark";
+  /** "old" renders only the base-branch side of the diff (single column) */
+  side?: "old";
 }
 
 type Kind = "hunk" | "add" | "del" | "meta" | "ctx";
@@ -74,10 +76,79 @@ function highlight(code: string): ReactNode[] {
   return out;
 }
 
-export default function DiffView({ diff, title, empty, theme = "light" }: Props) {
+type SplitRow =
+  | { kind: "hunk"; text: string }
+  | { kind: "ctx"; oldLn: number; newLn: number; content: string }
+  | { kind: "del"; oldLn: number; content: string }
+  | { kind: "add"; newLn: number; content: string };
+
+function parseSplitRows(lines: string[]): SplitRow[] {
+  const rows: SplitRow[] = [];
+  let oldNo = 0;
+  let newNo = 0;
+  for (const line of lines) {
+    const k = classify(line);
+    if (k === "meta") continue;
+    if (k === "hunk") {
+      const mm = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+      if (mm) { oldNo = parseInt(mm[1], 10); newNo = parseInt(mm[2], 10); }
+      rows.push({ kind: "hunk", text: line });
+      continue;
+    }
+    const content = line.slice(1);
+    if (k === "del")      rows.push({ kind: "del", oldLn: oldNo++, content });
+    else if (k === "add") rows.push({ kind: "add", newLn: newNo++, content });
+    else                  rows.push({ kind: "ctx", oldLn: oldNo++, newLn: newNo++, content });
+  }
+  return rows;
+}
+
+export default function DiffView({ diff, title, empty, theme = "light", side }: Props) {
   const lines = diff.length ? diff.split("\n") : [];
   let oldNo = 0;
   let newNo = 0;
+
+  if (side === "old") {
+    // Render only the base-branch version: context + deleted lines.
+    // Added lines (present only in the current branch) become empty
+    // placeholder rows so both panes stay vertically aligned.
+    const rows = parseSplitRows(lines);
+    return (
+      <div className="diff">
+        {title && <div className="diff-title">{title}</div>}
+        {lines.length === 0 && <div className="diff-empty">{empty ?? "No changes to display"}</div>}
+        <div className={`diff-body code-${theme}`}>
+          {rows.map((r, i) => {
+            if (r.kind === "hunk") {
+              return (
+                <div className="dl dl-hunk" key={i}>
+                  <span className="ln" />
+                  <span className="sign" />
+                  <span className="dt">{r.text}</span>
+                </div>
+              );
+            }
+            if (r.kind === "add") {
+              return (
+                <div className="dl dl-old-gap" key={i}>
+                  <span className="ln" />
+                  <span className="sign" />
+                  <span className="dt"> </span>
+                </div>
+              );
+            }
+            return (
+              <div className={`dl ${r.kind === "del" ? "dl-del" : "dl-ctx"}`} key={i}>
+                <span className="ln">{r.oldLn}</span>
+                <span className="sign">{r.kind === "del" ? "-" : " "}</span>
+                <span className="dt">{highlight(r.content || " ")}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="diff">
@@ -103,16 +174,7 @@ export default function DiffView({ diff, title, empty, theme = "light" }: Props)
               </div>
             );
           }
-          if (kind === "meta") {
-            return (
-              <div className="dl dl-meta" key={i}>
-                <span className="ln" />
-                <span className="ln" />
-                <span className="sign" />
-                <span className="dt">{line}</span>
-              </div>
-            );
-          }
+          if (kind === "meta") return null;
           let l = "";
           let r = "";
           let sign = " ";
@@ -126,7 +188,7 @@ export default function DiffView({ diff, title, empty, theme = "light" }: Props)
             l = String(oldNo++);
             r = String(newNo++);
           }
-          const content = kind === "ctx" ? line.slice(1) : line.slice(1);
+          const content = line.slice(1);
           return (
             <div className={`dl dl-${kind}`} key={i}>
               <span className="ln">{l}</span>
