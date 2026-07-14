@@ -18,6 +18,7 @@ export interface GraphLayout {
   nodes: GraphNode[];
   edges: GraphEdge[];
   maxCol: number;
+  rowMaxCol: number[]; // per-row: max lane index active at that row
 }
 
 /**
@@ -35,6 +36,7 @@ export function computeGraph(commits: CommitInfo[]): GraphLayout {
 
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
+  const rowMaxCol: number[] = [];
   let lanes: (string | null)[] = [];
   let maxCol = 0;
 
@@ -49,7 +51,6 @@ export function computeGraph(commits: CommitInfo[]): GraphLayout {
       }
     }
     lanes[col] = c.hash;
-    maxCol = Math.max(maxCol, col);
     nodes.push({ commit: c, row: i, col });
 
     // Advance lanes for parents.
@@ -57,8 +58,6 @@ export function computeGraph(commits: CommitInfo[]): GraphLayout {
     if (parents.length === 0) {
       lanes[col] = null;
     } else {
-      // If first parent is already tracked in another lane, free this lane
-      // to avoid duplicate tracking (lane leak on common ancestors).
       const firstParentExisting = lanes.indexOf(parents[0]);
       if (firstParentExisting !== -1 && firstParentExisting !== col) {
         lanes[col] = null;
@@ -93,10 +92,16 @@ export function computeGraph(commits: CommitInfo[]): GraphLayout {
       });
     }
 
-    maxCol = Math.max(maxCol, lanes.filter((l) => l !== null).length - 1);
+    // Record the rightmost active lane at this row.
+    const activeMax = lanes.reduce(
+      (m, v, idx) => (v !== null ? Math.max(m, idx) : m),
+      col
+    );
+    rowMaxCol.push(activeMax);
+    maxCol = Math.max(maxCol, activeMax);
   });
 
-  return { nodes, edges, maxCol };
+  return { nodes, edges, maxCol, rowMaxCol };
 }
 
 export const PALETTE_SIZE = 8;

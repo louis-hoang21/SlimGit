@@ -1,6 +1,3 @@
-// Browser-only mock backend. When SlimGit runs outside Tauri (e.g. `npm run
-// dev` opened in a normal browser), there is no Rust side, so we serve
-// realistic sample data. This lets you preview the UI without building.
 import {
   BranchInfo,
   CommitInfo,

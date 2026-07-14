@@ -6,13 +6,13 @@ import { BranchInfo, CommitInfo, DiffFile, StashInfo, StatusResult } from "./typ
 import Toolbar from "./components/Toolbar";
 import Main from "./components/Main";
 import StatusBar from "./components/StatusBar";
-import ContextMenu from "./components/ContextMenu";
+import ContextMenu from "./components/common/ContextMenu";
 import CommitModal from "./components/CommitModal";
 import CheckoutConfirmation from "./components/CheckoutConfirmation";
 import LogsPanel from "./components/LogsPanel";
 import WelcomeScreen from "./components/WelcomeScreen";
-import Toast from "./components/Toast";
-import { ConfirmDialog, InputDialog } from "./components/Dialog";
+import Toast from "./components/common/Toast";
+import { ConfirmDialog, InputDialog } from "./components/common/Dialog";
 import { isTauri } from "./mock";
 import { Play, Cloud, GitBranch, ChevronDown, ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
@@ -40,6 +40,9 @@ export default function App() {
     }
     return [];
   });
+  const [repoSort, setRepoSort] = useState<import("./ui-types").RepoSortKey>(
+    () => (localStorage.getItem("slimgit-repo-sort") as import("./ui-types").RepoSortKey) ?? "name"
+  );
   const [repo, setRepo] = useState<string | null>(null);
 
   const [status, setStatus] = useState<StatusResult | null>(null);
@@ -359,25 +362,58 @@ export default function App() {
   useEffect(() => {
     if (repo) localStorage.setItem("slimgit-active-repo", repo);
   }, [repo]);
+  useEffect(() => {
+    localStorage.setItem("slimgit-repo-sort", repoSort);
+  }, [repoSort]);
 
   async function openRepo() {
-    const selected = await open({ directory: true, multiple: false });
-    if (typeof selected !== "string") return;
-    if (!(await api.isRepo(selected))) {
-      notify("Not a git repository", true);
-      return;
-    }
-    const top = await api.toplevel(selected);
-    const s = await api.status(top).catch(() => null);
-    const ref: RepoRef = {
-      path: top,
-      name: baseOf(top),
-      branch: s?.branch ?? "",
+    const selected = await open({ directory: true, multiple: true });
+    if (!selected) return;
+    const paths = Array.isArray(selected) ? selected : [selected];
+
+    const addRepo = async (top: string) => {
+      const s = await api.status(top).catch(() => null);
+      const ref: RepoRef = {
+        path: top,
+        name: baseOf(top),
+        branch: s?.branch ?? "",
+        addedAt: Date.now(),
+      };
+      setRepos((prev) =>
+        prev.some((p) => p.path === top) ? prev : [...prev, ref]
+      );
+      return top;
     };
-    setRepos((prev) =>
-      prev.some((p) => p.path === top) ? prev : [...prev, ref]
-    );
-    switchRepo(top);
+
+    const added: string[] = [];
+    for (const p of paths) {
+      if (await api.isRepo(p)) {
+        const top = await api.toplevel(p);
+        const result = await addRepo(top);
+        added.push(result);
+      } else {
+        // Scan direct children for git repos (parent folder case)
+        const children = await api.findReposInDir(p);
+        if (children.length === 0) {
+          notify(`No git repositories found in ${baseOf(p)}`, true);
+        } else {
+          for (const child of children) {
+            await addRepo(child);
+            added.push(child);
+          }
+        }
+      }
+    }
+
+    if (added.length > 0) switchRepo(added[added.length - 1]);
+  }
+
+  function removeRepo(path: string) {
+    setRepos((prev) => prev.filter((r) => r.path !== path));
+    if (repo === path) {
+      const remaining = repos.filter((r) => r.path !== path);
+      setRepo(remaining.length > 0 ? remaining[0].path : null);
+    }
   }
 
   function switchRepo(path: string) {
@@ -389,6 +425,9 @@ export default function App() {
     setDiffText("");
     setCompareDiff("");
     setCompareBase(null);
+    setRepos((prev) =>
+      prev.map((r) => (r.path === path ? { ...r, lastActiveAt: Date.now() } : r))
+    );
     setRepo(path);
   }
 
@@ -1043,18 +1082,21 @@ export default function App() {
   const inProgress =
     status && (status.merging || status.rebasing || status.cherry_picking);
 
-  // Group repositories by parent directory (SmartGit-style tree).
+  // Group repositories by parent directory (SmartGit-style tree), applying the active sort.
   const repoGroups = useMemo(() => {
+    const sorted = [...repos].sort((a, b) => {
+      if (repoSort === "name") return a.name.localeCompare(b.name);
+      if (repoSort === "recent") return (b.lastActiveAt ?? 0) - (a.lastActiveAt ?? 0);
+      // "added": newest added first
+      return (b.addedAt ?? 0) - (a.addedAt ?? 0);
+    });
     const g: Record<string, RepoRef[]> = {};
-    for (const r of repos) {
-      const parent = dirOf(r.path).replace(
-        /^\/Users\/[^/]+/,
-        "~"
-      );
+    for (const r of sorted) {
+      const parent = dirOf(r.path).replace(/^\/Users\/[^/]+/, "~");
       (g[parent] ??= []).push(r);
     }
     return g;
-  }, [repos]);
+  }, [repos, repoSort]);
 
   // Keep the native-menu dispatcher pointed at the latest handlers.
   menuHandlerRef.current = (id: string) => {
@@ -1087,7 +1129,13 @@ export default function App() {
   };
 
   if (!repo) {
-    return <WelcomeScreen onOpenRepository={openRepo} />;
+    return (
+      <WelcomeScreen
+        onOpenRepository={openRepo}
+        recentRepos={[...repos].sort((a, b) => (b.lastActiveAt ?? b.addedAt ?? 0) - (a.lastActiveAt ?? a.addedAt ?? 0)).slice(0, 5)}
+        onOpenRecent={switchRepo}
+      />
+    );
   }
 
   return (
@@ -1129,6 +1177,9 @@ export default function App() {
         repoGroups={repoGroups}
         repo={repo}
         onSwitchRepo={switchRepo}
+        onRemoveRepo={removeRepo}
+        repoSort={repoSort}
+        onRepoSortChange={setRepoSort}
         collapsedGroups={collapsedGroups}
         onToggleGroup={toggleGroup}
         localBranchCount={localBranches.length}
