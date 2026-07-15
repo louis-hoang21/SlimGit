@@ -10,7 +10,9 @@ import ContextMenu from "./components/common/ContextMenu";
 import CommitModal from "./components/CommitModal";
 import CheckoutConfirmation from "./components/CheckoutConfirmation";
 import LogsPanel from "./components/LogsPanel";
+import ConflictSolver from "./components/ConflictSolver";
 import WelcomeScreen from "./components/WelcomeScreen";
+import LoadingScreen from "./components/LoadingScreen";
 import Toast from "./components/common/Toast";
 import { ConfirmDialog, InputDialog } from "./components/common/Dialog";
 import { isTauri } from "./mock";
@@ -44,6 +46,19 @@ export default function App() {
     () => (localStorage.getItem("slimgit-repo-sort") as import("./ui-types").RepoSortKey) ?? "name"
   );
   const [repo, setRepo] = useState<string | null>(null);
+  // True while we're restoring the previous session (or seeding the browser
+  // preview). Prevents the Welcome screen from flashing before the last active
+  // repo is restored on a second launch. Starts true whenever there's a
+  // persisted session to restore.
+  const [booting, setBooting] = useState<boolean>(() => {
+    try {
+      const s = localStorage.getItem("slimgit-repos");
+      if (s) return Array.isArray(JSON.parse(s)) && JSON.parse(s).length > 0;
+    } catch {
+      /* ignore */
+    }
+    return false;
+  });
 
   const [status, setStatus] = useState<StatusResult | null>(null);
   const [branches, setBranches] = useState<BranchInfo[]>([]);
@@ -260,7 +275,8 @@ export default function App() {
           notify(okMsg || (typeof out === "string" ? out : ""));
         return true;
       } catch (e) {
-        notify(String(e), true);
+        const msg = String(e);
+        notify(/CONFLICT/.test(msg) ? "Conflicted" : msg, true);
         return false;
       } finally {
         setBusy(false);
@@ -304,8 +320,13 @@ export default function App() {
     }
   }, [repo, notify]);
 
+  // Tracks the initial data load for the active repo, so we can show a loading
+  // screen until the first refresh settles (whether it succeeds or fails).
+  const [loadingRepo, setLoadingRepo] = useState(false);
   useEffect(() => {
-    if (repo) refreshAll();
+    if (!repo) return;
+    setLoadingRepo(true);
+    refreshAll().finally(() => setLoadingRepo(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repo]);
 
@@ -328,10 +349,15 @@ export default function App() {
   // Browser preview: seed a sample repo so the layout is visible without Tauri.
   useEffect(() => {
     if (isTauri || repos.length) return;
+    setBooting(true);
     (async () => {
-      const top = await api.toplevel("");
-      setRepos([{ path: top, name: baseOf(top), branch: "feature/EBILL-2358-dev" }]);
-      setRepo(top);
+      try {
+        const top = await api.toplevel("");
+        setRepos([{ path: top, name: baseOf(top), branch: "feature/EBILL-2358-dev" }]);
+        setRepo(top);
+      } finally {
+        setBooting(false);
+      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -340,16 +366,25 @@ export default function App() {
   // repos anymore, then jump straight back into the last active one (only if
   // it's still valid) instead of showing the Welcome screen.
   useEffect(() => {
-    if (!repos.length) return;
+    if (!repos.length) {
+      // No session to restore. In Tauri that means show the Welcome screen; in
+      // the browser preview the seed effect above takes over.
+      if (isTauri) setBooting(false);
+      return;
+    }
     (async () => {
-      const checks = await Promise.all(
-        repos.map(async (r) => ((await api.isRepo(r.path).catch(() => false)) ? r : null))
-      );
-      const valid = checks.filter((r): r is RepoRef => r !== null);
-      if (valid.length !== repos.length) setRepos(valid);
-      const lastActive = localStorage.getItem("slimgit-active-repo");
-      const target = valid.find((r) => r.path === lastActive) ?? valid[0];
-      if (target) setRepo(target.path);
+      try {
+        const checks = await Promise.all(
+          repos.map(async (r) => ((await api.isRepo(r.path).catch(() => false)) ? r : null))
+        );
+        const valid = checks.filter((r): r is RepoRef => r !== null);
+        if (valid.length !== repos.length) setRepos(valid);
+        const lastActive = localStorage.getItem("slimgit-active-repo");
+        const target = valid.find((r) => r.path === lastActive) ?? valid[0];
+        if (target) setRepo(target.path);
+      } finally {
+        setBooting(false);
+      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1128,6 +1163,12 @@ export default function App() {
     }
   };
 
+  // While restoring the last session, show a loading screen instead of briefly
+  // flashing the Welcome screen before the active repo is restored.
+  if (booting) {
+    return <LoadingScreen message="Restoring session…" />;
+  }
+
   if (!repo) {
     return (
       <WelcomeScreen
@@ -1136,6 +1177,13 @@ export default function App() {
         onOpenRecent={switchRepo}
       />
     );
+  }
+
+  // Repo restored but its data hasn't loaded yet: show a loading screen rather
+  // than an empty shell. Only while the initial load is in flight, so a failed
+  // load falls through to the normal UI instead of hanging here.
+  if (loadingRepo && !status) {
+    return <LoadingScreen message="Loading repository…" />;
   }
 
   return (
@@ -1208,11 +1256,6 @@ export default function App() {
         selPaths={selPaths}
         onSelectRow={selectRow}
         onFileContext={fileMenu}
-        conflictFile={conflictFile}
-        onConflictResolved={() => {
-          setConflictFile(null);
-          refreshStatus();
-        }}
         journalSel={journalSel}
         status={status}
         diffText={diffText}
@@ -1273,6 +1316,18 @@ export default function App() {
           status={status}
           onClose={() => setCheckoutTarget(null)}
           onCheckout={(mode) => performCheckout(checkoutTarget, mode)}
+        />
+      )}
+
+      {conflictFile && repo && (
+        <ConflictSolver
+          repo={repo}
+          path={conflictFile}
+          onResolved={() => {
+            setConflictFile(null);
+            refreshStatus();
+          }}
+          onClose={() => setConflictFile(null)}
         />
       )}
 

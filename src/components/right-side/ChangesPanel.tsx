@@ -1,13 +1,9 @@
 import type { StatusResult } from "../../types";
 import DiffView from "../DiffView";
-import ConflictView from "../ConflictView";
 
 export interface ChangesPanelProps {
-  repo: string;
   onStartVDrag: (e: React.MouseEvent, which: "files" | "journal") => void;
   selPath: string | null;
-  conflictFile: string | null;
-  onConflictResolved: () => void;
   journalSel: string | null;
   stashSel: number | null;
   status: StatusResult | null;
@@ -18,11 +14,8 @@ export interface ChangesPanelProps {
 }
 
 export default function ChangesPanel({
-  repo,
   onStartVDrag,
   selPath,
-  conflictFile,
-  onConflictResolved,
   journalSel,
   stashSel,
   status,
@@ -40,12 +33,7 @@ export default function ChangesPanel({
         <div className="spacer" />
       </div>
       <div className="changes-body">
-        {conflictFile ? (
-          <>
-            <div className="head-gutter"><span>HEAD</span></div>
-            <ConflictView repo={repo} path={conflictFile} onResolved={onConflictResolved} />
-          </>
-        ) : journalSel === null && stashSel === null ? (
+        {journalSel === null && stashSel === null ? (
           <div className="changes-split">
             <div className="changes-pane">
               <div className="cmp-hd">

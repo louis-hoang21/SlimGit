@@ -49,8 +49,6 @@ export interface MainProps {
   onFileContext: (row: Row, x: number, y: number) => void;
 
   // ---------- Changes ----------
-  conflictFile: string | null;
-  onConflictResolved: () => void;
   journalSel: string | null;
   status: StatusResult | null;
   diffText: string;
@@ -76,7 +74,7 @@ export default function Main({
   filesH, onStartVDrag, filesTitle, filteredRows, totalRowsCount, colW,
   onStartColDrag, fileQuery, onFileQueryChange, onFilesKeyDown,
   selPath, selPaths, onSelectRow, onFileContext,
-  conflictFile, onConflictResolved, journalSel, status, diffText,
+  journalSel, status, diffText,
   compareDiff, compareBase, dark,
   journalH, journalQuery, onJournalQueryChange, onSelectWorkingTree,
   filteredCommits, onSelectCommit, onCommitContext,
@@ -127,11 +125,8 @@ export default function Main({
           onFileContext={onFileContext}
         />
         <ChangesPanel
-          repo={repo}
           onStartVDrag={onStartVDrag}
           selPath={selPath}
-          conflictFile={conflictFile}
-          onConflictResolved={onConflictResolved}
           journalSel={journalSel}
           stashSel={stashSel}
           status={status}

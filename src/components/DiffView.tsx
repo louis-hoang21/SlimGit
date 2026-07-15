@@ -49,7 +49,8 @@ const TYPES = new Set([
 ]);
 
 // Lightweight, single-pass syntax highlighter good enough for diff previews.
-function highlight(code: string): ReactNode[] {
+// Exported so the Conflict Solver can render its panes with the same theme.
+export function highlight(code: string): ReactNode[] {
   const out: ReactNode[] = [];
   const re =
     /(\/\/[^\n]*|#[^\n]*)|(`(?:\\.|[^`\\])*`|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|(\b\d[\d_.]*\b)|([A-Za-z_$][A-Za-z0-9_$]*)|(\s+)|([^\sA-Za-z0-9_$]+)/g;

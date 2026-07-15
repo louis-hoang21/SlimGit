@@ -104,6 +104,8 @@ export const api = {
 
   conflictContent: (repo: string, path: string) =>
     invoke<string>("conflict_content", { repo, path }),
+  conflictSides: (repo: string, path: string) =>
+    invoke<{ base: string; ours: string; theirs: string }>("conflict_sides", { repo, path }),
   saveFile: (repo: string, path: string, content: string) =>
     invoke("save_file", { repo, path, content }),
   resolveConflict: (repo: string, path: string, side: "ours" | "theirs") =>

@@ -78,7 +78,10 @@ export default function FilesPanel({
             ) : filteredRows.map((row) => (
               <tr
                 key={row.path}
-                className={selPaths.includes(row.path) || selPath === row.path ? "sel" : ""}
+                className={[
+                  selPaths.includes(row.path) || selPath === row.path ? "sel" : "",
+                  row.conflicted ? "row-conflicted" : "",
+                ].filter(Boolean).join(" ")}
                 onClick={(e) => onSelectRow(row, e)}
                 onContextMenu={(e) => { e.preventDefault(); onFileContext(row, e.clientX, e.clientY); }}
               >

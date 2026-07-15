@@ -124,6 +124,70 @@ function wrap<T>(v: T): Promise<T> {
   return new Promise((res) => setTimeout(() => res(v), 60));
 }
 
+const mockConflictWorking = `<?php
+
+class ShopCardService
+{
+    public function isValidQuantity(int $quantity, string $providerCode)
+    {
+        return $quantity >= self::MIN_QUANTITY;
+    }
+
+    public function refundTransaction(ShopCardTransaction $shopCardTransaction)
+    {
+        if (!$shopCardTransaction->isError()) {
+            return false;
+        }
+<<<<<<< Updated upstream
+        // update transaction + check refundable
+        try {
+            $this->dbTransactionRepository->beginTransaction();
+            $transaction = $this->shopCardTransactionRepository->get();
+            if (!$this->checkRefundable($transaction)) {
+                return false;
+            }
+=======
+        try {
+            $this->dbTransactionRepository->beginTransaction();
+>>>>>>> Stashed changes
+        } catch (Exception $exception) {
+            $this->dbTransactionRepository->rollbackTransaction();
+        }
+        return true;
+    }
+
+<<<<<<< Updated upstream
+    public function lockTransactionForUpdate(string $transactionId)
+    {
+        return self::makeConnection()->table(self::$table);
+    }
+=======
+    public function lockForUpdate(string $transactionId)
+    {
+        return self::makeConnection()->lock($transactionId);
+    }
+>>>>>>> Stashed changes
+}
+`;
+
+function stripConflicts(text: string, keep: "ours" | "theirs"): string {
+  const out: string[] = [];
+  let mode: "ctx" | "ours" | "theirs" = "ctx";
+  for (const l of text.split("\n")) {
+    if (l.startsWith("<<<<<<<")) mode = "ours";
+    else if (l.startsWith("=======") && mode === "ours") mode = "theirs";
+    else if (l.startsWith(">>>>>>>")) mode = "ctx";
+    else if (mode === "ctx" || mode === keep) out.push(l);
+  }
+  return out.join("\n");
+}
+
+const mockConflictSides = {
+  base: "",
+  ours: stripConflicts(mockConflictWorking, "ours"),
+  theirs: stripConflicts(mockConflictWorking, "theirs"),
+};
+
 export const mockApi: Record<string, (...a: any[]) => Promise<any>> = {
   is_repo: () => wrap(true),
   toplevel: () => wrap("/Users/hunghd/Documents/topup-gateway"),
@@ -154,7 +218,8 @@ export const mockApi: Record<string, (...a: any[]) => Promise<any>> = {
   stash_files: () =>
     wrap<DiffFile[]>([{ path: "src/public/admin/index.js", status: "M" }]),
   stash_file_diff: () => wrap(sampleDiff),
-  conflict_content: () => wrap("line A\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> branch\nline B\n"),
+  conflict_content: () => wrap(mockConflictWorking),
+  conflict_sides: () => wrap(mockConflictSides),
   // Write ops are no-ops in the browser preview.
   stage: () => wrap(null),
   unstage: () => wrap(null),

@@ -269,6 +269,11 @@ fn conflict_content(repo: String, path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn conflict_sides(repo: String, path: String) -> Result<git::ConflictSides, String> {
+    git::conflict_sides(&repo, &path)
+}
+
+#[tauri::command]
 fn save_file(repo: String, path: String, content: String) -> Result<(), String> {
     git::save_file(&repo, &path, &content)
 }
@@ -425,6 +430,7 @@ pub fn run() {
             stash_files,
             stash_file_diff,
             conflict_content,
+            conflict_sides,
             save_file,
             resolve_conflict,
             mark_resolved,

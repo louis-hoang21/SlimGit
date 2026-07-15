@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { Search, X, RotateCw } from "lucide-react";
+import { Search, X, RotateCw, ChevronDown, ChevronRight } from "lucide-react";
 import { CommitInfo, BranchInfo, DiffFile } from "../types";
 import { computeGraph, GRAPH_COLORS, laneColor } from "../graph";
 import DiffView from "./DiffView";
 import ContextMenu from "./common/ContextMenu";
-import type { Menu } from "../ui-types";
+import type { Menu, BNode } from "../ui-types";
+import { buildBranchTree } from "../utils";
 import { api } from "../api";
 
 interface Props {
@@ -20,6 +21,7 @@ interface Props {
 const ROW_H = 28;
 const COL_W = 18;
 const PAD = 12;
+const MAX_GRAPH_W = 75;
 
 function fmtDate(ts: number): string {
   const d = new Date(ts * 1000);
@@ -52,9 +54,26 @@ function statusLabel(s: string) {
   return m[s] ?? s;
 }
 
-// Clamp helper
 function clamp(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v));
+}
+
+
+function simplifyBranchTree(nodes: BNode[]): BNode[] {
+  return nodes.map((node) => {
+    if (node.branch) return node;
+    let name = node.name;
+    let children = node.children;
+    while (children.length === 1 && !children[0].branch) {
+      name = `${name}/${children[0].name}`;
+      children = children[0].children;
+    }
+    if (children.length === 1 && children[0].branch) {
+      const leaf = children[0];
+      return { ...leaf, name: `${name}/${leaf.name}` };
+    }
+    return { ...node, name, children: simplifyBranchTree(children) };
+  });
 }
 
 export default function LogsPanel({
@@ -65,6 +84,11 @@ export default function LogsPanel({
   const [commits, setCommits] = useState<CommitInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
+
+  // Branch dropdown (custom) — Remote group collapsed by default
+  const [branchMenuOpen, setBranchMenuOpen] = useState(false);
+  const [remoteOpen, setRemoteOpen] = useState(false);
+  const branchSelRef = useRef<HTMLDivElement>(null);
 
   // Selection
   const [selectedHash, setSelectedHash] = useState<string | null>(null);
@@ -78,12 +102,9 @@ export default function LogsPanel({
   const [menu, setMenu] = useState<Menu | null>(null);
 
   // --- Resize state ---
-  // Panel (modal) size
   const [panelW, setPanelW] = useState(() => Math.min(window.innerWidth * 0.92, 1200));
   const [panelH, setPanelH] = useState(() => Math.min(window.innerHeight * 0.96, 980));
-  // Vertical split: graph top / detail bottom (as fraction of panel body height)
   const [graphFrac, setGraphFrac] = useState(0.45);
-  // Horizontal split in detail: files left / diff right (in px)
   const [filesW, setFilesW] = useState(280);
 
   const dragRef = useRef<
@@ -153,6 +174,18 @@ export default function LogsPanel({
     return () => window.removeEventListener("click", close);
   }, []);
 
+  // Close branch dropdown on outside click
+  useEffect(() => {
+    if (!branchMenuOpen) return;
+    const close = (e: MouseEvent) => {
+      if (branchSelRef.current && !branchSelRef.current.contains(e.target as Node)) {
+        setBranchMenuOpen(false);
+      }
+    };
+    window.addEventListener("mousedown", close);
+    return () => window.removeEventListener("mousedown", close);
+  }, [branchMenuOpen]);
+
   const filteredCommits = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return commits;
@@ -214,14 +247,63 @@ export default function LogsPanel({
 
   // Graph layout
   const layout = useMemo(() => computeGraph(filteredCommits), [filteredCommits]);
-  const graphW = (layout.maxCol + 1) * COL_W + PAD;
+  const graphW = Math.min((layout.maxCol + 1) * COL_W + PAD, MAX_GRAPH_W);
   const totalH = filteredCommits.length * ROW_H;
   const nodeCol = new Map(layout.nodes.map((n) => [n.commit.hash, n.col]));
 
   const localBranches = branches.filter((b) => !b.is_remote);
   const remoteBranches = branches.filter((b) => b.is_remote);
 
-  // Body height = panel height - header(42) - col-header(28)
+  const localTree = useMemo(
+    () => simplifyBranchTree(buildBranchTree(localBranches.map((b) => ({ label: b.name, branch: b })))),
+    [localBranches]
+  );
+  const remoteTree = useMemo(
+    () => simplifyBranchTree(buildBranchTree(remoteBranches.map((b) => ({ label: b.name, branch: b })))),
+    [remoteBranches]
+  );
+
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
+  const toggleFolder = (k: string) =>
+    setCollapsedFolders((s) => {
+      const n = new Set(s);
+      n.has(k) ? n.delete(k) : n.add(k);
+      return n;
+    });
+
+  function renderBranchNodes(nodes: BNode[], depth: number, scope: string): React.ReactNode {
+    return nodes.map((node) => {
+      if (node.branch) {
+        const b = node.branch;
+        return (
+          <div
+            key={node.key}
+            className={`logs-branch-item ${!allBranches && selectedBranch === b.name ? "sel" : ""}`}
+            style={{ paddingLeft: 12 + depth * 14 + 16 }}
+            onClick={() => { setAllBranches(false); setSelectedBranch(b.name); setBranchMenuOpen(false); }}
+          >
+            {node.name}
+          </div>
+        );
+      }
+      const fkey = `${scope}:${node.key}`;
+      const collapsed = collapsedFolders.has(fkey);
+      return (
+        <div key={node.key}>
+          <div
+            className="logs-branch-grp-hd logs-branch-node-folder logs-branch-grp-toggle"
+            style={{ paddingLeft: 12 + depth * 14 }}
+            onClick={() => toggleFolder(fkey)}
+          >
+            {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+            <span>{node.name}</span>
+          </div>
+          {!collapsed && renderBranchNodes(node.children, depth + 1, scope)}
+        </div>
+      );
+    });
+  }
+
   const HEADER_H = 42;
   const COL_HDR_H = 28;
   const bodyH = panelH - HEADER_H - COL_HDR_H;
@@ -253,26 +335,46 @@ export default function LogsPanel({
 
           <span className="logs-title">Logs</span>
 
-          <select
-            className="logs-branch-sel"
-            value={allBranches ? "__all__" : selectedBranch}
-            onChange={(e) => {
-              if (e.target.value === "__all__") { setAllBranches(true); }
-              else { setAllBranches(false); setSelectedBranch(e.target.value); }
-            }}
-          >
-            <option value="__all__">All Branches</option>
-            {localBranches.length > 0 && (
-              <optgroup label="Local">
-                {localBranches.map((b) => <option key={b.name} value={b.name}>{b.name}</option>)}
-              </optgroup>
+          <div className="logs-branch" ref={branchSelRef}>
+            <button
+              type="button"
+              className="logs-branch-sel"
+              onClick={() => setBranchMenuOpen((v) => !v)}
+            >
+              <span className="logs-branch-cur">{allBranches ? "All Branches" : selectedBranch}</span>
+              <ChevronDown size={13} className="logs-branch-caret" />
+            </button>
+
+            {branchMenuOpen && (
+              <div className="logs-branch-pop">
+                <div
+                  className={`logs-branch-item ${allBranches ? "sel" : ""}`}
+                  onClick={() => { setAllBranches(true); setBranchMenuOpen(false); }}
+                >
+                  All Branches
+                </div>
+
+                {localBranches.length > 0 && (
+                  <div className="logs-branch-grp-hd">Local</div>
+                )}
+                {renderBranchNodes(localTree, 0, "local")}
+
+                {remoteBranches.length > 0 && (
+                  <>
+                    <div
+                      className="logs-branch-grp-hd logs-branch-grp-toggle"
+                      onClick={() => setRemoteOpen((v) => !v)}
+                    >
+                      {remoteOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                      <span>Remote</span>
+                      <span className="logs-branch-grp-count">{remoteBranches.length}</span>
+                    </div>
+                    {remoteOpen && renderBranchNodes(remoteTree, 0, "remote")}
+                  </>
+                )}
+              </div>
             )}
-            {remoteBranches.length > 0 && (
-              <optgroup label="Remote">
-                {remoteBranches.map((b) => <option key={b.name} value={b.name}>{b.name}</option>)}
-              </optgroup>
-            )}
-          </select>
+          </div>
 
           <div className="logs-search">
             <Search size={13} className="logs-search-ico" />

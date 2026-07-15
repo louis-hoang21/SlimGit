@@ -851,6 +851,24 @@ pub fn conflict_content(repo: &str, path: &str) -> Result<String, String> {
     std::fs::read_to_string(&full).map_err(|e| format!("read {path}: {e}"))
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct ConflictSides {
+    pub base: String,
+    pub ours: String,
+    pub theirs: String,
+}
+
+/// Full-file contents of the three index stages of a conflicted path.
+/// A stage may be missing (e.g. added by both sides) — empty string then.
+pub fn conflict_sides(repo: &str, path: &str) -> Result<ConflictSides, String> {
+    let stage = |n: u8| run(repo, &["show", &format!(":{n}:{path}")]).unwrap_or_default();
+    Ok(ConflictSides {
+        base: stage(1),
+        ours: stage(2),
+        theirs: stage(3),
+    })
+}
+
 pub fn save_file(repo: &str, path: &str, content: &str) -> Result<(), String> {
     let full = Path::new(repo).join(path);
     std::fs::write(&full, content).map_err(|e| format!("write {path}: {e}"))

@@ -48,6 +48,26 @@
 }
 
 @layer components {
+  /* ---------- Loading ---------- */
+  .loading-screen {
+    @apply h-full flex items-center justify-center bg-neutral-100 dark:bg-zinc-950;
+  }
+  .loading-screen-inner {
+    @apply flex flex-col items-center gap-3 text-neutral-500 dark:text-zinc-400;
+  }
+  .loading-screen-spin {
+    @apply text-blue-600 dark:text-blue-400;
+    animation: sg-spin 0.8s linear infinite;
+  }
+  .loading-screen-text {
+    @apply text-[13px] font-medium;
+  }
+  @keyframes sg-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
   /* ---------- Welcome ---------- */
   .welcome {
     @apply h-full grid grid-cols-2 bg-neutral-200 dark:bg-zinc-950;
@@ -487,6 +507,15 @@
   .ftable tbody tr.sel {
     @apply bg-blue-100 dark:bg-blue-500/30;
   }
+  .ftable tbody tr.row-conflicted {
+    @apply bg-red-50 dark:bg-red-500/10;
+  }
+  .ftable tbody tr.row-conflicted:hover {
+    @apply bg-red-100 dark:bg-red-500/20;
+  }
+  .ftable tbody tr.row-conflicted.sel {
+    @apply bg-red-200 dark:bg-red-500/40;
+  }
   .ftable td {
     @apply px-2 py-1.5 whitespace-nowrap overflow-hidden text-ellipsis;
   }
@@ -777,7 +806,7 @@
     @apply bg-blue-100 dark:bg-blue-500/30;
   }
   .c-subject {
-    @apply flex-1 overflow-hidden text-ellipsis;
+    @apply flex-1 min-w-0 overflow-hidden text-ellipsis;
   }
   .c-author {
     @apply text-neutral-500 dark:text-zinc-400 w-[130px] overflow-hidden text-ellipsis;
@@ -814,8 +843,10 @@
 
   /* ---------- Banner ---------- */
   .banner {
-    @apply flex items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-500/15
-      border-b border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300;
+    @apply flex items-center gap-2 px-3 py-1.5;
+    background: rgba(250, 168, 105, 1);
+    color: rgba(17, 7, 1, 1);
+    border-bottom-width: 0;
   }
   .banner button {
     @apply px-2.5 py-1;
@@ -885,23 +916,146 @@
     @apply flex items-center gap-1.5 text-neutral-500 dark:text-zinc-400;
   }
 
-  /* ---------- Conflict ---------- */
-  .conflict {
-    @apply flex-1 flex flex-col min-h-0;
+  /* ---------- Conflict Solver ---------- */
+  .cfs-overlay {
+    @apply fixed inset-0 z-50 flex items-stretch justify-center bg-black/40 p-4;
   }
-  .conflict-bar {
-    @apply flex items-center gap-2 px-2.5 py-1.5 bg-red-50 dark:bg-red-500/15
-      border-b border-red-300 dark:border-red-700;
+  
+  .cfs-win {
+    @apply flex flex-col flex-1 min-w-0 rounded-xl shadow-2xl overflow-hidden
+      bg-white dark:bg-[#0d1117] border border-[#d0d7de] dark:border-[#30363d];
   }
-  .conflict-file {
-    @apply text-red-600 dark:text-red-400 font-semibold;
+  .cfs-title {
+    @apply flex items-center justify-center relative px-3 py-1.5 text-[13px] font-semibold
+      bg-[#f6f8fa] dark:bg-[#161b22] border-b border-[#d0d7de] dark:border-[#30363d]
+      text-[#1f2328] dark:text-[#e6edf3];
   }
-  .conflict-editor {
-    @apply flex-1 resize-none bg-white dark:bg-[#1c1c20] text-neutral-800 dark:text-zinc-100
-      border-0 p-2.5 font-mono text-[12px] leading-[1.5] focus:outline-none;
+  .cfs-x {
+    @apply absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded
+      text-[#656d76] dark:text-[#7d8590] hover:bg-[#eaeef2] dark:hover:bg-[#21262d];
   }
-  .conflict-hint {
-    @apply px-2.5 py-1.5 bg-amber-50 dark:bg-amber-500/15 text-amber-800 dark:text-amber-300 text-[11px];
+  .cfs-toolbar {
+    @apply flex items-end gap-1 px-2 py-1.5 border-b border-[#d0d7de] dark:border-[#30363d]
+      bg-[#f6f8fa] dark:bg-[#161b22];
+  }
+  /* Borderless flat tool buttons — the icon/hover color carries the affordance
+     instead of a box. Overrides the global <button> border + hover styles. */
+  .cfs-tool {
+    @apply flex flex-col items-center gap-0.5 px-2 py-1 rounded text-[10px] leading-none
+      bg-transparent border-none text-[#656d76] dark:text-[#7d8590]
+      transition-colors disabled:opacity-40;
+  }
+  .cfs-tool:hover:not(:disabled) {
+    @apply bg-[#eaeef2] dark:bg-[#21262d] text-[#0969da] dark:text-[#2f81f7]
+      border-transparent;
+  }
+  .cfs-tool:disabled {
+    @apply bg-transparent border-none;
+  }
+  .cfs-sep {
+    @apply w-px self-stretch mx-1 bg-[#d0d7de] dark:bg-[#30363d];
+  }
+  .cfs-body {
+    @apply flex flex-1 min-h-0 divide-x divide-[#d0d7de] dark:divide-[#30363d];
+  }
+  .cfs-pane {
+    @apply flex flex-col flex-1 min-w-0;
+  }
+  .cfs-pane-hd {
+    @apply px-2.5 py-1 text-[12px] font-medium border-b border-[#d0d7de] dark:border-[#30363d]
+      bg-[#f6f8fa] dark:bg-[#161b22] text-[#656d76] dark:text-[#7d8590] truncate;
+  }
+  /* Same code appearance as DiffView (Changes): GitHub token palette + gutter
+     colors, so syntax highlighting (.tok-*) renders identically here. */
+  .cfs-code {
+    flex: 1;
+    overflow: auto;
+    font-family: var(--mono, ui-monospace, monospace);
+    font-size: 12px;
+    background: #ffffff;
+    color: #24292f;
+    --t-kw: #cf222e;
+    --t-fn: #8250df;
+    --t-type: #953800;
+    --t-str: #0a3069;
+    --t-num: #0550ae;
+    --t-com: #6e7781;
+    --t-punct: #57606a;
+    --ln-bg: #f6f8fa;
+    --ln-fg: #8c959f;
+    --ln-border: #d8dee4;
+  }
+  .dark .cfs-code {
+    background: #0d1117;
+    color: #c9d1d9;
+    --t-kw: #ff7b72;
+    --t-fn: #d2a8ff;
+    --t-type: #d2a8ff;
+    --t-str: #a5d6ff;
+    --t-num: #79c0ff;
+    --t-com: #8b949e;
+    --t-punct: #8b949e;
+    --ln-bg: #161b22;
+    --ln-fg: #6e7681;
+    --ln-border: #21262d;
+  }
+  .cfs-line {
+    @apply flex whitespace-pre relative;
+    line-height: 18px;
+    height: 18px;
+  }
+  /* SmartGit-style per-conflict take arrows, pinned to the pane's inner edge. */
+  .cfs-take {
+    @apply absolute z-20 flex items-center justify-center w-[20px] h-[18px] p-0
+      rounded-[3px] border-none cursor-pointer text-[13px] font-bold leading-none
+      text-white shadow-sm opacity-70 hover:opacity-100 transition-opacity;
+  }
+  .cfs-take-ours {
+    @apply right-0 bg-[#2da44e] hover:bg-[#2c974b];
+  }
+  .cfs-take-theirs {
+    @apply left-0 bg-[#0969da] hover:bg-[#0860ca] dark:bg-[#1f6feb];
+  }
+  .cfs-take.on {
+    @apply opacity-100 ring-1 ring-white/70;
+  }
+  .cfs-ln {
+    @apply w-10 shrink-0 text-right pr-[7px] select-none;
+    color: var(--ln-fg);
+    background: var(--ln-bg);
+    border-right: 1px solid var(--ln-border);
+  }
+  .cfs-act {
+    @apply w-5 shrink-0 text-center select-none;
+  }
+  .cfs-reset {
+    @apply text-[#cf222e] dark:text-[#f85149] hover:opacity-80 font-bold leading-none;
+  }
+  /* Conflict lines. "ours" (left) reads as GitHub green, "theirs" (right) as
+     GitHub blue, and unresolved lines in the working tree as attention yellow. */
+  .cfs-conf {
+    @apply bg-[#fff8c5] dark:bg-[rgba(210,153,34,0.15)] cursor-pointer;
+  }
+  .cfs-pane-left .cfs-conf {
+    @apply bg-[#e6ffec] dark:bg-[rgba(46,160,67,0.15)];
+  }
+  .cfs-pane-right .cfs-conf {
+    @apply bg-[#ddf4ff] dark:bg-[rgba(56,139,253,0.15)];
+  }
+  .cfs-marker {
+    @apply bg-[#ffebe9] dark:bg-[rgba(248,81,73,0.15)] text-[#cf222e] dark:text-[#f85149] cursor-pointer;
+  }
+  .cfs-res {
+    @apply bg-[#e6ffec] dark:bg-[rgba(46,160,67,0.15)] cursor-pointer;
+  }
+  .cfs-cur.cfs-conf,
+  .cfs-cur.cfs-marker,
+  .cfs-cur.cfs-res {
+    @apply outline outline-1 -outline-offset-1 outline-[#0969da] dark:outline-[#2f81f7];
+  }
+  .cfs-status {
+    @apply flex items-center px-3 py-1 text-[11px] border-t border-[#d0d7de] dark:border-[#30363d]
+      bg-[#f6f8fa] dark:bg-[#161b22] text-[#656d76] dark:text-[#7d8590];
   }
 
   /* ---------- Logs Panel ---------- */
@@ -949,11 +1103,53 @@
     from { opacity: 1; }
     to { opacity: 0.4; }
   }
+  .logs-branch {
+    @apply relative shrink-0;
+  }
   .logs-branch-sel {
-    @apply text-[12px] bg-white dark:bg-zinc-700 border border-neutral-300 dark:border-zinc-600
-      rounded-md px-2 py-1 text-neutral-800 dark:text-zinc-100
-      focus:outline-none focus:border-blue-500;
+    @apply flex items-center gap-1 text-[12px] bg-white dark:bg-zinc-700 border border-neutral-300 dark:border-zinc-600
+      rounded-md px-2 py-1 text-neutral-800 dark:text-zinc-100 cursor-pointer
+      focus:outline-none hover:border-blue-500;
     max-width: 220px;
+  }
+  .logs-branch-cur {
+    @apply truncate;
+    max-width: 180px;
+  }
+  .logs-branch-caret {
+    @apply text-neutral-400 dark:text-zinc-400 shrink-0;
+  }
+  .logs-branch-pop {
+    @apply absolute left-0 top-full mt-1 z-50 bg-white dark:bg-zinc-800
+      border border-neutral-200 dark:border-zinc-700 rounded-md shadow-xl py-1 overflow-auto;
+    min-width: 220px;
+    max-width: 340px;
+    max-height: 360px;
+  }
+  .logs-branch-item {
+    @apply px-3 py-1 text-[12px] text-neutral-700 dark:text-zinc-200 cursor-pointer truncate
+      hover:bg-neutral-100 dark:hover:bg-zinc-700;
+  }
+  .logs-branch-item.sel {
+    @apply bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-medium;
+  }
+  .logs-branch-item-remote {
+    @apply pl-7;
+  }
+  .logs-branch-grp-hd {
+    @apply px-3 pt-1.5 pb-0.5 text-[11px] font-semibold uppercase tracking-wide
+      text-neutral-400 dark:text-zinc-500;
+  }
+  .logs-branch-grp-toggle {
+    @apply flex items-center gap-1 cursor-pointer select-none normal-case tracking-normal
+      hover:text-neutral-600 dark:hover:text-zinc-300;
+  }
+  .logs-branch-grp-count {
+    @apply ml-auto text-[10px] font-normal text-neutral-400 dark:text-zinc-500;
+  }
+ 
+  .logs-branch-node-folder {
+    @apply normal-case tracking-normal text-neutral-500 dark:text-zinc-400 truncate;
   }
   .logs-search {
     @apply flex items-center gap-1.5 bg-white dark:bg-zinc-800 border border-neutral-300 dark:border-zinc-600
@@ -1098,7 +1294,7 @@
   }
   .toast-err {
     @apply bg-red-500;
-    min-width: 320px;
+    width: max-content;
   }
   .toast-body {
     @apply flex items-center gap-2.5 px-4 text-white;
