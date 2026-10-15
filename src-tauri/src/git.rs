@@ -208,7 +208,12 @@ pub fn find_repos_in_dir(path: &str) -> Vec<String> {
 // ---------- Status ----------
 
 pub fn status(repo: &str) -> Result<StatusResult, String> {
-    let raw = run(repo, &["status", "--porcelain=v2", "--branch", "-z"])?;
+    // --untracked-files=all lists each file inside a new directory; the default
+    // collapses it to one "dir/" entry with no file name and no usable diff.
+    let raw = run(
+        repo,
+        &["status", "--porcelain=v2", "--branch", "-z", "--untracked-files=all"],
+    )?;
     let mut res = StatusResult::default();
 
     // Detect in-progress operations via the .git directory.
@@ -454,7 +459,17 @@ fn parse_log_output(raw: &str) -> Vec<CommitInfo> {
 }
 
 /// Log commits for a specific branch (or HEAD if branch is empty).
+/// True when `rev` resolves to a commit. False in a repo with no commits yet
+/// (unborn HEAD), where `git log HEAD` fails with "ambiguous argument 'HEAD'".
+fn rev_exists(repo: &str, rev: &str) -> bool {
+    run(repo, &["rev-parse", "--verify", "--quiet", &format!("{rev}^{{commit}}")]).is_ok()
+}
+
 pub fn log_branch(repo: &str, branch: &str, limit: u32) -> Result<Vec<CommitInfo>, String> {
+    let rev_name = if branch.is_empty() { "HEAD" } else { branch };
+    if !rev_exists(repo, rev_name) {
+        return Ok(Vec::new());
+    }
     let unit = '\u{1f}';
     let fmt = format!("%H{u}%h{u}%P{u}%an{u}%ae{u}%at{u}%s{u}%D", u = unit);
     let limit_arg = format!("-n{}", limit);
@@ -473,6 +488,9 @@ pub fn log_graph(
     all: bool,
     first_parent: bool,
 ) -> Result<Vec<CommitInfo>, String> {
+    if !all && !rev_exists(repo, "HEAD") {
+        return Ok(Vec::new());
+    }
     let unit = '\u{1f}';
     let fmt = format!("%H{u}%h{u}%P{u}%an{u}%ae{u}%at{u}%s{u}%D", u = unit);
     let limit_arg = format!("-n{}", limit);
@@ -940,6 +958,9 @@ pub fn stash_branch(repo: &str, name: &str, index: usize) -> Result<String, Stri
 // ---------- File history ----------
 
 pub fn log_file(repo: &str, path: &str, limit: u32) -> Result<Vec<CommitInfo>, String> {
+    if !rev_exists(repo, "HEAD") {
+        return Ok(Vec::new());
+    }
     log_custom(repo, &["log", "--follow", &format!("-n{}", limit), "--", path])
 }
 
@@ -975,6 +996,9 @@ pub fn log_search(
     limit: u32,
     all: bool,
 ) -> Result<Vec<CommitInfo>, String> {
+    if !all && !rev_exists(repo, "HEAD") {
+        return Ok(Vec::new());
+    }
     let n = format!("-n{}", limit);
     let mut args: Vec<String> = vec!["log".into(), n];
     if all {
