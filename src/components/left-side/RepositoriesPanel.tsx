@@ -1,12 +1,17 @@
 import { useState } from "react";
-import { ChevronDown, Folder, FolderGit2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Folder, FolderGit2 } from "lucide-react";
 import type { RepoRef, RepoSortKey } from "../../ui-types";
 
 export interface RepositoriesPanelProps {
   repoGroups: Record<string, RepoRef[]>;
   repo: string;
   onSwitchRepo: (path: string) => void;
-  onRemoveRepo: (path: string) => void;
+  onRemoveRepos: (paths: string[]) => void;
+  onOpenInNewWindow: (path: string) => void;
+  onRenameRepo: (path: string) => void;
+  onOpenRepoLog: (path: string) => void;
+  groupLabels: Record<string, string>;
+  onRenameGroup: (parent: string) => void;
   repoSort: RepoSortKey;
   onRepoSortChange: (sort: RepoSortKey) => void;
 }
@@ -21,16 +26,31 @@ export default function RepositoriesPanel({
   repoGroups,
   repo,
   onSwitchRepo,
-  onRemoveRepo,
+  onRemoveRepos,
+  onOpenInNewWindow,
+  onRenameRepo,
+  onOpenRepoLog,
+  groupLabels,
+  onRenameGroup,
   repoSort,
   onRepoSortChange,
 }: RepositoriesPanelProps) {
   const [repoCtx, setRepoCtx] = useState<{ path: string; x: number; y: number } | null>(null);
+  const [groupCtx, setGroupCtx] = useState<{ parent: string; x: number; y: number } | null>(null);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [tooltip, setTooltip] = useState<{ branch: string; x: number; y: number } | null>(null);
 
+  const toggleGroup = (parent: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      next.has(parent) ? next.delete(parent) : next.add(parent);
+      return next;
+    });
+
   const closeMenus = () => {
     setRepoCtx(null);
+    setGroupCtx(null);
     setSortMenuOpen(false);
   };
 
@@ -72,12 +92,21 @@ export default function RepositoriesPanel({
         <div className="panel-bd">
           {Object.entries(repoGroups).map(([parent, list]) => (
             <div key={parent}>
-              <div className="tree-root">
-                <ChevronDown size={13} />
+              <div
+                className="tree-root"
+                style={{ cursor: "pointer" }}
+                onClick={() => toggleGroup(parent)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setGroupCtx({ parent, x: e.clientX, y: e.clientY });
+                }}
+              >
+                {collapsed.has(parent) ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
                 <Folder size={14} />
-                <span>{parent}</span>
+                <span>{groupLabels[parent] ?? parent}</span>
               </div>
-              {list.map((r) => (
+              {!collapsed.has(parent) && list.map((r) => (
                 <div
                   key={r.path}
                   className={`tree-item ${repo === r.path ? "active" : ""}`}
@@ -117,10 +146,71 @@ export default function RepositoriesPanel({
           onClick={(e) => e.stopPropagation()}
         >
           <div
+            className={`ctx-item ${repo === repoCtx.path ? "disabled" : ""}`}
+            onClick={() => { if (repo !== repoCtx.path) { onSwitchRepo(repoCtx.path); setRepoCtx(null); } }}
+          >
+            Open Repository
+          </div>
+          <div
+            className="ctx-item"
+            onClick={() => { onOpenInNewWindow(repoCtx.path); setRepoCtx(null); }}
+          >
+            Open Repository in New Window
+          </div>
+          <div className="ctx-sep" />
+          <div
+            className="ctx-item"
+            onClick={() => { onOpenRepoLog(repoCtx.path); setRepoCtx(null); }}
+          >
+            Log
+            <span className="sc">⌘L</span>
+          </div>
+          <div className="ctx-sep" />
+          <div
+            className="ctx-item"
+            onClick={() => { onRenameRepo(repoCtx.path); setRepoCtx(null); }}
+          >
+            Rename…
+            <span className="sc">F2</span>
+          </div>
+          <div
             className="ctx-item danger"
-            onClick={() => { onRemoveRepo(repoCtx.path); setRepoCtx(null); }}
+            onClick={() => { onRemoveRepos([repoCtx.path]); setRepoCtx(null); }}
           >
             Remove from List
+            <span className="sc">⌫</span>
+          </div>
+        </div>
+      )}
+
+      {groupCtx && (
+        <div
+          className="ctx-menu"
+          style={{ position: "fixed", top: groupCtx.y, left: groupCtx.x, zIndex: 999 }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div
+            className="ctx-item"
+            onClick={() => { toggleGroup(groupCtx.parent); setGroupCtx(null); }}
+          >
+            {collapsed.has(groupCtx.parent) ? "Expand" : "Collapse"}
+          </div>
+          <div className="ctx-sep" />
+          <div
+            className="ctx-item"
+            onClick={() => { onRenameGroup(groupCtx.parent); setGroupCtx(null); }}
+          >
+            Rename…
+            <span className="sc">F2</span>
+          </div>
+          <div
+            className="ctx-item danger"
+            onClick={() => {
+              onRemoveRepos((repoGroups[groupCtx.parent] ?? []).map((r) => r.path));
+              setGroupCtx(null);
+            }}
+          >
+            Remove All from List
           </div>
         </div>
       )}

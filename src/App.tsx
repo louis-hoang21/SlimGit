@@ -13,6 +13,13 @@ import LogsPanel from "./components/LogsPanel";
 import WelcomeScreen from "./components/WelcomeScreen";
 import Toast from "./components/common/Toast";
 import { ConfirmDialog, InputDialog } from "./components/common/Dialog";
+import RemotesDialog from "./components/dialogs/RemotesDialog";
+import RepoSettingsDialog from "./components/dialogs/RepoSettingsDialog";
+import CleanDialog from "./components/dialogs/CleanDialog";
+import ReflogPanel from "./components/ReflogPanel";
+import FileHistoryModal from "./components/FileHistoryModal";
+import CompareModal from "./components/CompareModal";
+import type { HunkAction } from "./components/DiffView";
 import { isTauri } from "./mock";
 import { Play, Cloud, GitBranch, ChevronDown, ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
@@ -44,6 +51,20 @@ export default function App() {
     () => (localStorage.getItem("slimgit-repo-sort") as import("./ui-types").RepoSortKey) ?? "name"
   );
   const [repo, setRepo] = useState<string | null>(null);
+  // git user.email of the active repo, shown in the status bar as "email — path".
+  const [repoEmail, setRepoEmail] = useState("");
+
+  // Custom display labels for repository groups (folders), keyed by the
+  // derived parent path. Persisted so renames survive relaunch.
+  const [groupLabels, setGroupLabels] = useState<Record<string, string>>(() => {
+    try {
+      const s = localStorage.getItem("slimgit-group-labels");
+      if (s) return JSON.parse(s);
+    } catch {
+      /* ignore */
+    }
+    return {};
+  });
 
   const [status, setStatus] = useState<StatusResult | null>(null);
   const [branches, setBranches] = useState<BranchInfo[]>([]);
@@ -71,6 +92,14 @@ export default function App() {
 
   // Logs panel
   const [showLogs, setShowLogs] = useState(false);
+
+  // SmartGit-style auxiliary dialogs / panels
+  const [showRemotes, setShowRemotes] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showClean, setShowClean] = useState(false);
+  const [showReflog, setShowReflog] = useState(false);
+  const [showCompare, setShowCompare] = useState(false);
+  const [fileHistoryPath, setFileHistoryPath] = useState<string | null>(null);
 
   // Commit modal
   const [showCommit, setShowCommit] = useState(false);
@@ -272,7 +301,12 @@ export default function App() {
   const refreshStatus = useCallback(async () => {
     if (!repo) return;
     try {
-      setStatus(await api.status(repo));
+      const s = await api.status(repo);
+      setStatus(s);
+      // Keep the Repositories tree branch label fresh on light refreshes too.
+      setRepos((prev) =>
+        prev.map((p) => (p.path === repo && p.branch !== s.branch ? { ...p, branch: s.branch } : p))
+      );
     } catch (e) {
       notify(String(e), true);
     }
@@ -287,7 +321,9 @@ export default function App() {
         api.stashList(repo),
         api.remotes(repo),
         api.tags(repo),
-        api.logGraph(repo, 500, true),
+        // Journal shows the current branch's own first-parent history (like the
+        // SmartGit journal): just the commits on this branch, no ref expansion.
+        api.logGraph(repo, 500, false, true),
       ]);
       setStatus(s);
       setBranches(b);
@@ -308,6 +344,33 @@ export default function App() {
     if (repo) refreshAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repo]);
+
+  // Load the repo's git user.email (refreshed when the settings dialog closes).
+  useEffect(() => {
+    if (!repo) { setRepoEmail(""); return; }
+    // Effective email: repo-local overrides global, so repos without a local
+    // user.email still show the global identity they commit with.
+    api.getConfigEffective(repo, "user.email").then(setRepoEmail).catch(() => setRepoEmail(""));
+  }, [repo, showSettings]);
+
+  // Pick up changes made outside the app (e.g. `git checkout` in a terminal):
+  // refresh when the window regains focus or becomes visible, and poll lightly
+  // while focused so branch/status stay close to live.
+  useEffect(() => {
+    if (!repo) return;
+    const onFocus = () => refreshAll();
+    const onVisible = () => { if (document.visibilityState === "visible") refreshAll(); };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+    const poll = window.setInterval(() => {
+      if (document.visibilityState === "visible" && document.hasFocus()) refreshStatus();
+    }, 3000);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.clearInterval(poll);
+    };
+  }, [repo, refreshAll, refreshStatus]);
 
   useEffect(() => {
     const close = () => setMenu(null);
@@ -347,8 +410,13 @@ export default function App() {
       );
       const valid = checks.filter((r): r is RepoRef => r !== null);
       if (valid.length !== repos.length) setRepos(valid);
+      // A window opened via "Open in New Window" carries ?repo=<path>.
+      const paramRepo = new URLSearchParams(window.location.search).get("repo");
       const lastActive = localStorage.getItem("slimgit-active-repo");
-      const target = valid.find((r) => r.path === lastActive) ?? valid[0];
+      const target =
+        (paramRepo && valid.find((r) => r.path === paramRepo)) ||
+        valid.find((r) => r.path === lastActive) ||
+        valid[0];
       if (target) setRepo(target.path);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -365,6 +433,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("slimgit-repo-sort", repoSort);
   }, [repoSort]);
+
+  useEffect(() => {
+    localStorage.setItem("slimgit-group-labels", JSON.stringify(groupLabels));
+  }, [groupLabels]);
 
   async function openRepo() {
     const selected = await open({ directory: true, multiple: true });
@@ -408,15 +480,101 @@ export default function App() {
     if (added.length > 0) switchRepo(added[added.length - 1]);
   }
 
-  function removeRepo(path: string) {
-    setRepos((prev) => prev.filter((r) => r.path !== path));
-    if (repo === path) {
-      const remaining = repos.filter((r) => r.path !== path);
-      setRepo(remaining.length > 0 ? remaining[0].path : null);
+  // Clone a remote repo: ask URL, pick a destination parent folder, then open it.
+  function cloneRepo() {
+    prompt("Clone — repository URL", "https://github.com/user/repo.git", async (url) => {
+      closeDialog();
+      const u = url.trim();
+      if (!u) return;
+      const parent = await open({ directory: true, multiple: false, title: "Destination folder" });
+      if (!parent || Array.isArray(parent)) return;
+      const name = (u.split("/").pop() ?? "repo").replace(/\.git$/, "");
+      const dest = `${parent}/${name}`;
+      const ok = await run(() => api.cloneRepo(u, dest), `Cloned ${name}`);
+      if (!ok) return;
+      const top = await api.toplevel(dest).catch(() => dest);
+      const s = await api.status(top).catch(() => null);
+      setRepos((prev) =>
+        prev.some((p) => p.path === top)
+          ? prev
+          : [...prev, { path: top, name: baseOf(top), branch: s?.branch ?? "", addedAt: Date.now() }]
+      );
+      switchRepo(top);
+    });
+  }
+
+  // Open a repo in a separate native window (falls back to a browser tab in preview).
+  async function openRepoInNewWindow(path: string) {
+    const url = `index.html?repo=${encodeURIComponent(path)}`;
+    const title = baseOf(path);
+    if (isTauri) {
+      try {
+        const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+        new WebviewWindow(`repo-${Date.now()}`, { url, title, width: 1200, height: 820 });
+      } catch (e) {
+        notify(String(e), true);
+      }
+    } else {
+      window.open(url, "_blank");
     }
   }
 
-  function switchRepo(path: string) {
+  // Rename a repo's display label in the list (does not touch git).
+  function renameRepoEntry(path: string) {
+    const cur = repos.find((r) => r.path === path);
+    prompt("Rename repository", cur?.name ?? "", async (name) => {
+      closeDialog();
+      const n = name.trim();
+      if (!n) return;
+      setRepos((prev) => prev.map((r) => (r.path === path ? { ...r, name: n } : r)));
+    }, cur?.name ?? "");
+  }
+
+  // Rename a repository group's display label (folder header).
+  function renameGroup(parent: string) {
+    prompt("Rename group", groupLabels[parent] ?? parent, async (name) => {
+      closeDialog();
+      const n = name.trim();
+      setGroupLabels((prev) => {
+        const next = { ...prev };
+        if (!n || n === parent) delete next[parent];
+        else next[parent] = n;
+        return next;
+      });
+    }, groupLabels[parent] ?? parent);
+  }
+
+  // Open the Log window for a repo (switches to it first if needed).
+  function openRepoLog(path: string) {
+    if (repo !== path) switchRepo(path);
+    setShowLogs(true);
+  }
+
+  // Remove one or more repos in a single update. Removing them one by one
+  // (e.g. "Remove All from List" on a folder) read a stale `repos`/`repo` and
+  // could make another just-removed repo the active one, leaving its branches
+  // and journal on screen.
+  function removeRepos(paths: string[]) {
+    const gone = new Set(paths);
+    const remaining = repos.filter((r) => !gone.has(r.path));
+    setRepos(remaining);
+    if (repo && gone.has(repo)) {
+      if (remaining.length > 0) {
+        switchRepo(remaining[0].path);
+      } else {
+        resetSelection();
+        setRepo(null);
+        setStatus(null);
+        setBranches([]);
+        setStashes([]);
+        setCommits([]);
+        setRemotes([]);
+        setTags([]);
+      }
+    }
+  }
+
+  function resetSelection() {
     setJournalSel(null);
     setStashSel(null);
     setSelPath(null);
@@ -425,6 +583,10 @@ export default function App() {
     setDiffText("");
     setCompareDiff("");
     setCompareBase(null);
+  }
+
+  function switchRepo(path: string) {
+    resetSelection();
     setRepos((prev) =>
       prev.map((r) => (r.path === path ? { ...r, lastActiveAt: Date.now() } : r))
     );
@@ -697,6 +859,19 @@ export default function App() {
     await refreshAll();
   }
 
+  // Sync = pull then push (SmartGit-style one-shot).
+  async function doSync() {
+    if (!status) return;
+    const pulled = await run(() => api.pull(repo!), "Pulled");
+    if (!pulled) { await refreshAll(); return; }
+    const remote = remotes[0] ?? "origin";
+    await run(
+      () => api.push(repo!, remote, status.branch, false, !status.upstream),
+      "Synced"
+    );
+    await refreshAll();
+  }
+
   async function doCommit() {
     if (!commitMsg.trim()) {
       notify("Enter a commit message", true);
@@ -732,6 +907,125 @@ export default function App() {
     await run(() => api.stashApply(repo!, 0), "Applied latest stash").then(
       refreshAll
     );
+  }
+
+  // ---------- Reword / interactive-rebase subset ----------
+  async function rewordCommitFlow(hash: string) {
+    const cur = await api.commitMessage(repo!, hash).catch(() => "");
+    const oid = status?.oid ?? "";
+    const isHead = oid !== "" && (oid === hash || oid.startsWith(hash) || hash.startsWith(oid));
+    prompt(
+      "Reword commit message",
+      "Commit message",
+      async (msg) => {
+        closeDialog();
+        const m = msg.trim();
+        if (!m) return;
+        await run(
+          () => (isHead ? api.rewordHead(repo!, m) : api.rewordCommit(repo!, hash, m)),
+          "Reworded"
+        ).then(refreshAll);
+      },
+      cur.split("\n")[0]
+    );
+  }
+  function dropCommitFlow(hash: string) {
+    const c = commits.find((k) => k.hash === hash);
+    confirm(
+      `Drop commit ${c?.short ?? hash}? This rewrites history.`,
+      true,
+      "Drop",
+      async () => {
+        closeDialog();
+        await run(() => api.dropCommit(repo!, hash), "Commit dropped").then(refreshAll);
+      }
+    );
+  }
+  function squashCommitFlow(hash: string) {
+    const c = commits.find((k) => k.hash === hash);
+    confirm(
+      `Squash ${c?.short ?? hash} into the previous commit? This rewrites history.`,
+      true,
+      "Squash",
+      async () => {
+        closeDialog();
+        await run(() => api.squashCommit(repo!, hash), "Squashed").then(refreshAll);
+      }
+    );
+  }
+
+  // ---------- Partial (hunk) staging ----------
+  async function onHunkAction(patch: string, action: HunkAction) {
+    const path = selPath;
+    const viewStaged = workingRows.find((r) => r.path === path)?.staged ?? false;
+    const apply = async () => {
+      const fn =
+        action === "stage"
+          ? () => api.stageHunk(repo!, patch)
+          : action === "unstage"
+          ? () => api.unstageHunk(repo!, patch)
+          : () => api.discardHunk(repo!, patch);
+      const label =
+        action === "stage" ? "Staged hunk" : action === "unstage" ? "Unstaged hunk" : "Discarded hunk";
+      const ok = await run(fn, label);
+      if (!ok) return;
+      await refreshStatus();
+      if (path) {
+        try {
+          setDiffText(await api.diff(repo!, path, viewStaged, false));
+        } catch {
+          setDiffText("");
+        }
+      }
+    };
+    if (action === "discard") {
+      confirm("Discard this hunk? The changes will be lost.", true, "Discard", async () => {
+        closeDialog();
+        await apply();
+      });
+    } else {
+      await apply();
+    }
+  }
+
+  // ---------- Toolbar auxiliary menus ----------
+  function pullOptionsMenu(x: number, y: number) {
+    const items: MenuItem[] = [
+      {
+        label: "Pull (rebase)",
+        run: () => run(() => api.pullOpts(repo!, true), "Pulled (rebase)").then(refreshAll),
+      },
+      {
+        label: "Pull (merge)",
+        run: () => run(() => api.pullOpts(repo!, false), "Pulled").then(refreshAll),
+      },
+      { sep: true },
+    ];
+    if (remotes.length) {
+      for (const rem of remotes)
+        items.push({
+          label: `Fetch ${rem}`,
+          run: () => run(() => api.fetchRemote(repo!, rem), `Fetched ${rem}`).then(refreshAll),
+        });
+    } else {
+      items.push({ label: "No remotes", disabled: true });
+    }
+    setMenu({ x, y, items });
+  }
+  function moreMenu(x: number, y: number) {
+    setMenu({
+      x,
+      y,
+      items: [
+        { label: "Remotes…", run: () => setShowRemotes(true) },
+        { label: "Reflog", run: () => setShowReflog(true) },
+        { label: "Compare…", run: () => setShowCompare(true) },
+        { sep: true },
+        { label: "Clean…", danger: true, run: () => setShowClean(true) },
+        { sep: true },
+        { label: "Repository Settings…", run: () => setShowSettings(true) },
+      ],
+    });
   }
 
   // Merge / Rebase toolbar dropdowns list other branches.
@@ -836,6 +1130,11 @@ export default function App() {
     }
     items.push({ sep: true });
     items.push({
+      label: "File History",
+      run: () => setFileHistoryPath(row.path),
+    });
+    items.push({ sep: true });
+    items.push({
       label: "Copy Name",
       run: () => navigator.clipboard.writeText(baseOf(row.path)),
     });
@@ -882,6 +1181,53 @@ export default function App() {
             });
           },
         },
+        {
+          label: "Create Tag here…",
+          run: () => {
+            prompt("Tag name at " + (c?.short ?? hash), "v1.0.0", async (name) => {
+              closeDialog();
+              const n = name.trim();
+              if (!n) return;
+              await run(() => api.createTag(repo!, n, hash, ""), "Tag created").then(refreshAll);
+            });
+          },
+        },
+        { sep: true },
+        {
+          label: "Reword…",
+          run: () => rewordCommitFlow(hash),
+        },
+        {
+          label: "Squash into previous",
+          run: () => squashCommitFlow(hash),
+        },
+        {
+          label: "Drop commit",
+          danger: true,
+          run: () => dropCommitFlow(hash),
+        },
+        { sep: true },
+        {
+          label: `Reset ${status?.branch ?? "branch"} to here — Soft`,
+          run: () =>
+            run(() => api.reset(repo!, hash, "soft"), "Reset (soft)").then(refreshAll),
+        },
+        {
+          label: "Reset to here — Mixed (keep working tree)",
+          run: () =>
+            run(() => api.reset(repo!, hash, "mixed"), "Reset (mixed)").then(refreshAll),
+        },
+        {
+          label: "Reset to here — Hard (discard changes)",
+          danger: true,
+          run: () => {
+            confirm(
+              `Hard reset ${status?.branch ?? "branch"} to ${c?.short ?? hash}? Uncommitted changes will be lost.`,
+              true, "Reset Hard",
+              async () => { closeDialog(); await run(() => api.reset(repo!, hash, "hard"), "Reset (hard)").then(refreshAll); }
+            );
+          },
+        },
         { sep: true },
         {
           label: "Copy Commit ID",
@@ -920,6 +1266,20 @@ export default function App() {
           run(() => api.rebase(repo!, b.name), "Rebased").then(refreshAll),
       });
     }
+    if (!b.is_remote) {
+      items.push({ sep: true });
+      items.push({
+        label: `Rename…`,
+        run: () => {
+          prompt("Rename branch", b.name, async (name) => {
+            closeDialog();
+            const n = name.trim();
+            if (!n || n === b.name) return;
+            await run(() => api.renameBranch(repo!, b.name, n), "Branch renamed").then(refreshAll);
+          }, b.name);
+        },
+      });
+    }
     if (!b.is_remote && !b.is_current) {
       items.push({ sep: true });
       items.push({
@@ -951,6 +1311,17 @@ export default function App() {
           label: "Pop",
           run: () =>
             run(() => api.stashPop(repo!, s.index), "Popped").then(refreshAll),
+        },
+        {
+          label: "Branch from stash…",
+          run: () => {
+            prompt("New branch from stash", "feature/from-stash", async (name) => {
+              closeDialog();
+              const n = name.trim();
+              if (!n) return;
+              await run(() => api.stashBranch(repo!, n, s.index), "Branch created from stash").then(refreshAll);
+            });
+          },
         },
         { sep: true },
         {
@@ -1072,8 +1443,26 @@ export default function App() {
               refreshAll
             ),
         },
+        {
+          label: "Push to remote",
+          run: () => {
+            const remote = remotes[0] ?? "origin";
+            run(() => api.pushTag(repo!, remote, tag), `Pushed tag ${tag}`).then(refreshAll);
+          },
+        },
         { sep: true },
         { label: "Copy Name", run: () => navigator.clipboard.writeText(tag) },
+        {
+          label: "Delete",
+          danger: true,
+          run: () => {
+            confirm(
+              `Delete tag ${tag}?`,
+              true, "Delete",
+              async () => { closeDialog(); await run(() => api.deleteTag(repo!, tag), "Tag deleted").then(refreshAll); }
+            );
+          },
+        },
       ],
     });
   }
@@ -1081,6 +1470,19 @@ export default function App() {
   const stagedCount = status?.files.filter((f) => f.staged && !f.conflicted).length ?? 0;
   const inProgress =
     status && (status.merging || status.rebasing || status.cherry_picking);
+
+  // Per-hunk staging applies only to the working tree of a tracked, non-conflicted
+  // file. Which action is offered depends on whether the shown diff is staged.
+  const hunkWorking = stashSel === null && journalSel === null;
+  const hunkSelRow = hunkWorking
+    ? workingRows.find((r) => r.path === selPath)
+    : undefined;
+  const hunkMode: "staged" | "unstaged" | null =
+    hunkWorking && hunkSelRow && !hunkSelRow.untracked && !hunkSelRow.conflicted && diffText
+      ? hunkSelRow.staged
+        ? "staged"
+        : "unstaged"
+      : null;
 
   // Group repositories by parent directory (SmartGit-style tree), applying the active sort.
   const repoGroups = useMemo(() => {
@@ -1130,11 +1532,26 @@ export default function App() {
 
   if (!repo) {
     return (
-      <WelcomeScreen
-        onOpenRepository={openRepo}
-        recentRepos={[...repos].sort((a, b) => (b.lastActiveAt ?? b.addedAt ?? 0) - (a.lastActiveAt ?? a.addedAt ?? 0)).slice(0, 5)}
-        onOpenRecent={switchRepo}
-      />
+      <>
+        <WelcomeScreen
+          onOpenRepository={openRepo}
+          onCloneRepository={cloneRepo}
+          recentRepos={[...repos].sort((a, b) => (b.lastActiveAt ?? b.addedAt ?? 0) - (a.lastActiveAt ?? a.addedAt ?? 0)).slice(0, 5)}
+          onOpenRecent={switchRepo}
+          dark={dark}
+          onToggleTheme={() => { setThemeIsManual(true); setDark((d) => !d); }}
+        />
+        {dialog?.type === "input" && (
+          <InputDialog
+            title={dialog.title}
+            placeholder={dialog.placeholder}
+            defaultValue={dialog.defaultValue}
+            confirmLabel={dialog.confirmLabel}
+            onConfirm={dialog.onConfirm}
+            onCancel={closeDialog}
+          />
+        )}
+      </>
     );
   }
 
@@ -1151,7 +1568,10 @@ export default function App() {
         conflictsCount={conflicts.length}
         onPull={doPull}
         onFetch={fetchAndReport}
+        onPullOptions={(e) => { e.stopPropagation(); pullOptionsMenu(e.clientX, e.clientY); }}
+        onMore={(e) => { e.stopPropagation(); moreMenu(e.clientX, e.clientY); }}
         onPush={() => doPush(false)}
+        onSync={doSync}
         onCommitClick={() => setShowCommit(true)}
         onStage={doStage}
         onUnstage={doUnstage}
@@ -1160,8 +1580,8 @@ export default function App() {
         onApplyStash={applyStash}
         onLog={() => setShowLogs(true)}
         onNewBranch={newBranch}
-        onMergeClick={(e) => branchPickMenu("merge", e.clientX, e.clientY)}
-        onRebaseClick={(e) => branchPickMenu("rebase", e.clientX, e.clientY)}
+        onMergeClick={(e) => { e.stopPropagation(); branchPickMenu("merge", e.clientX, e.clientY); }}
+        onRebaseClick={(e) => { e.stopPropagation(); branchPickMenu("rebase", e.clientX, e.clientY); }}
         onToggleTheme={() => {
           setThemeIsManual(true);
           setDark((d) => !d);
@@ -1177,7 +1597,12 @@ export default function App() {
         repoGroups={repoGroups}
         repo={repo}
         onSwitchRepo={switchRepo}
-        onRemoveRepo={removeRepo}
+        onRemoveRepos={removeRepos}
+        onOpenInNewWindow={openRepoInNewWindow}
+        onRenameRepo={renameRepoEntry}
+        onOpenRepoLog={openRepoLog}
+        groupLabels={groupLabels}
+        onRenameGroup={renameGroup}
         repoSort={repoSort}
         onRepoSortChange={setRepoSort}
         collapsedGroups={collapsedGroups}
@@ -1219,6 +1644,8 @@ export default function App() {
         compareDiff={compareDiff}
         compareBase={compareBase}
         dark={dark}
+        hunkMode={hunkMode}
+        onHunkAction={onHunkAction}
         journalH={journalH}
         journalQuery={journalQuery}
         onJournalQueryChange={setJournalQuery}
@@ -1228,7 +1655,7 @@ export default function App() {
         onCommitContext={commitMenu}
       />
 
-      <StatusBar repo={repo} status={status} />
+      <StatusBar repo={repo} status={status} email={repoEmail} />
 
       {menu && <ContextMenu menu={menu} onClose={() => setMenu(null)} />}
 
@@ -1252,6 +1679,9 @@ export default function App() {
           branches={branches}
           currentBranch={status.branch}
           dark={dark}
+          status={status}
+          onChanged={refreshAll}
+          onRequestCommit={() => setShowCommit(true)}
           onClose={() => setShowLogs(false)}
           onCherryPick={(hash) =>
             run(() => api.cherryPick(repo, hash), "Cherry-picked").then(refreshAll)
@@ -1264,6 +1694,31 @@ export default function App() {
               async () => { closeDialog(); await run(() => api.revert(repo, hash), "Reverted").then(refreshAll); }
             );
           }}
+          onReset={(hash, mode) => {
+            const c = commits.find((k) => k.hash === hash);
+            if (mode === "hard") {
+              confirm(
+                `Hard reset ${status.branch} to ${c?.short ?? hash}? Uncommitted changes will be lost.`,
+                true, "Reset Hard",
+                async () => { closeDialog(); await run(() => api.reset(repo, hash, "hard"), "Reset (hard)").then(refreshAll); }
+              );
+            } else {
+              run(() => api.reset(repo, hash, mode), `Reset (${mode})`).then(refreshAll);
+            }
+          }}
+          onCreateTag={(hash) => {
+            const c = commits.find((k) => k.hash === hash);
+            prompt("Tag name at " + (c?.short ?? hash), "v1.0.0", async (name) => {
+              closeDialog();
+              const n = name.trim();
+              if (!n) return;
+              await run(() => api.createTag(repo, n, hash, ""), "Tag created").then(refreshAll);
+            });
+          }}
+          onReword={rewordCommitFlow}
+          onDrop={dropCommitFlow}
+          onSquash={squashCommitFlow}
+          onFileHistory={setFileHistoryPath}
         />
       )}
 
@@ -1273,6 +1728,72 @@ export default function App() {
           status={status}
           onClose={() => setCheckoutTarget(null)}
           onCheckout={(mode) => performCheckout(checkoutTarget, mode)}
+        />
+      )}
+
+      {showRemotes && repo && (
+        <RemotesDialog
+          repo={repo}
+          notify={notify}
+          onChanged={refreshAll}
+          onClose={() => setShowRemotes(false)}
+        />
+      )}
+
+      {showSettings && repo && (
+        <RepoSettingsDialog repo={repo} notify={notify} onClose={() => setShowSettings(false)} />
+      )}
+
+      {showClean && repo && (
+        <CleanDialog
+          repo={repo}
+          notify={notify}
+          onChanged={refreshStatus}
+          onClose={() => setShowClean(false)}
+        />
+      )}
+
+      {showReflog && repo && status && (
+        <ReflogPanel
+          repo={repo}
+          currentBranch={status.branch}
+          onClose={() => setShowReflog(false)}
+          onCheckout={(hash) => {
+            setShowReflog(false);
+            run(() => api.checkout(repo, hash), "Checked out").then(refreshAll);
+          }}
+          onReset={(hash, mode) => {
+            if (mode === "hard") {
+              confirm(
+                `Hard reset ${status.branch} to ${hash.slice(0, 7)}? Uncommitted changes will be lost.`,
+                true, "Reset Hard",
+                async () => { closeDialog(); setShowReflog(false); await run(() => api.reset(repo, hash, "hard"), "Reset (hard)").then(refreshAll); }
+              );
+            } else {
+              setShowReflog(false);
+              run(() => api.reset(repo, hash, mode), `Reset (${mode})`).then(refreshAll);
+            }
+          }}
+        />
+      )}
+
+      {showCompare && repo && status && (
+        <CompareModal
+          repo={repo}
+          branches={branches}
+          tags={tags}
+          currentBranch={status.branch}
+          dark={dark}
+          onClose={() => setShowCompare(false)}
+        />
+      )}
+
+      {fileHistoryPath && repo && (
+        <FileHistoryModal
+          repo={repo}
+          path={fileHistoryPath}
+          dark={dark}
+          onClose={() => setFileHistoryPath(null)}
         />
       )}
 

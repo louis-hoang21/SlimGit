@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { X, CheckCircle2, AlertCircle } from "lucide-react";
 
 interface Props {
@@ -8,18 +7,7 @@ interface Props {
 }
 
 export default function Toast({ msg, err, onClose }: Props) {
-  const [progress, setProgress] = useState(100);
-  const DURATION = 5000;
-
-  useEffect(() => {
-    const start = Date.now();
-    const tick = setInterval(() => {
-      const elapsed = Date.now() - start;
-      setProgress(Math.max(0, 100 - (elapsed / DURATION) * 100));
-    }, 50);
-    return () => clearInterval(tick);
-  }, []);
-
+  // Auto-hide runs silently in the parent; no visible countdown bar.
   return (
     <div className={`toast-v2 ${err ? "toast-err" : "toast-ok"}`}>
       <div className="toast-body">
@@ -34,7 +22,6 @@ export default function Toast({ msg, err, onClose }: Props) {
           <X size={15} strokeWidth={2.5} />
         </button>
       </div>
-      <div className="toast-bar" style={{ width: `${progress}%` }} />
     </div>
   );
 }

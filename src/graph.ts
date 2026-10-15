@@ -53,8 +53,11 @@ export function computeGraph(commits: CommitInfo[]): GraphLayout {
     lanes[col] = c.hash;
     nodes.push({ commit: c, row: i, col });
 
-    // Advance lanes for parents.
-    const parents = c.parents;
+    // Advance lanes for parents. Only parents present in the loaded list get a
+    // lane: a parent outside it (first-parent journal's merged-in side, or
+    // beyond the load limit) would otherwise reserve an empty "phantom" lane
+    // forever, widening the graph with nothing drawn in it.
+    const parents = c.parents.filter((p) => rowOf.has(p));
     if (parents.length === 0) {
       lanes[col] = null;
     } else {
@@ -102,6 +105,18 @@ export function computeGraph(commits: CommitInfo[]): GraphLayout {
   });
 
   return { nodes, edges, maxCol, rowMaxCol };
+}
+
+/**
+ * Left padding for row `i`'s text, SmartGit-style: the message starts right
+ * after the rightmost lane in that row's band (so indentation varies per row,
+ * never leaves an empty gap and never overlaps a lane). The previous row is
+ * included because a curve from it still crosses the top half of row `i`.
+ */
+export function rowTextOffset(layout: GraphLayout, i: number, colW: number, pad: number): number {
+  const cur = layout.rowMaxCol[i] ?? 0;
+  const prev = i > 0 ? layout.rowMaxCol[i - 1] ?? 0 : 0;
+  return (Math.max(cur, prev) + 1) * colW + pad / 2 + 6;
 }
 
 export const PALETTE_SIZE = 8;

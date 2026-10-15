@@ -1,10 +1,13 @@
-import { FolderGit2, Folder, Clock } from "lucide-react";
+import { FolderGit2, Folder, Clock, Download, Moon, Sun } from "lucide-react";
 import type { RepoRef } from "../ui-types";
 
 interface WelcomeScreenProps {
   onOpenRepository: () => void;
+  onCloneRepository?: () => void;
   recentRepos?: RepoRef[];
   onOpenRecent?: (path: string) => void;
+  dark?: boolean;
+  onToggleTheme?: () => void;
 }
 
 function WelcomeIntro() {
@@ -20,7 +23,7 @@ function WelcomeIntro() {
   );
 }
 
-function WelcomeRepositoryPicker({ onOpenRepository, recentRepos = [], onOpenRecent }: WelcomeScreenProps) {
+function WelcomeRepositoryPicker({ onOpenRepository, onCloneRepository, recentRepos = [], onOpenRecent }: WelcomeScreenProps) {
   return (
     <section className="welcome-pane welcome-action">
       <div className="welcome-action-inner">
@@ -36,6 +39,12 @@ function WelcomeRepositoryPicker({ onOpenRepository, recentRepos = [], onOpenRec
           Open Repositories
           <span className="welcome-kbd">⌘O</span>
         </button>
+        {onCloneRepository && (
+          <button className="welcome-open-btn" onClick={onCloneRepository}>
+            <Download size={16} />
+            Clone Repository
+          </button>
+        )}
 
         {recentRepos.length > 0 && (
           <div className="welcome-recent">
@@ -62,12 +71,18 @@ function WelcomeRepositoryPicker({ onOpenRepository, recentRepos = [], onOpenRec
   );
 }
 
-export default function WelcomeScreen({ onOpenRepository, recentRepos, onOpenRecent }: WelcomeScreenProps) {
+export default function WelcomeScreen({ onOpenRepository, onCloneRepository, recentRepos, onOpenRecent, dark, onToggleTheme }: WelcomeScreenProps) {
   return (
     <div className="welcome">
+      {onToggleTheme && (
+        <button className="welcome-theme-toggle" onClick={onToggleTheme} title={dark ? "Light mode" : "Dark mode"}>
+          {dark ? <Sun size={16} /> : <Moon size={16} />}
+        </button>
+      )}
       <WelcomeIntro />
       <WelcomeRepositoryPicker
         onOpenRepository={onOpenRepository}
+        onCloneRepository={onCloneRepository}
         recentRepos={recentRepos}
         onOpenRecent={onOpenRecent}
       />

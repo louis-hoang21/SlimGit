@@ -163,4 +163,12 @@ export const mockApi: Record<string, (...a: any[]) => Promise<any>> = {
   fetch: () => wrap("mock fetch"),
   pull: () => wrap("mock pull"),
   push: () => wrap("mock push"),
+  reset: () => wrap("mock reset"),
+  rename_branch: () => wrap("mock rename"),
+  create_tag: () => wrap("mock tag"),
+  delete_tag: () => wrap("mock tag delete"),
+  push_tag: () => wrap("mock tag push"),
+  clone_repo: () => wrap("mock clone"),
+  get_config: () => wrap("dev@slimgit.local"),
+  get_config_effective: () => wrap("dev@slimgit.local"),
 };

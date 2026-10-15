@@ -3,6 +3,7 @@ import {
   ArrowDown,
   RefreshCcw,
   ArrowUp,
+  ArrowDownUp,
   GitCommit,
   FilePlus,
   FileMinus,
@@ -15,6 +16,7 @@ import {
   GitPullRequestArrow,
   Moon,
   Sun,
+  MoreHorizontal,
 } from "lucide-react";
 import type { StatusResult } from "../types";
 import type { BadgeColor } from "../ui-types";
@@ -42,7 +44,10 @@ export interface ToolbarProps {
   conflictsCount: number;
   onPull: () => void;
   onFetch: () => void;
+  onPullOptions: (e: React.MouseEvent) => void;
+  onMore: (e: React.MouseEvent) => void;
   onPush: () => void;
+  onSync: () => void;
   onCommitClick: () => void;
   onStage: () => void;
   onUnstage: () => void;
@@ -72,7 +77,10 @@ export default function Toolbar({
   conflictsCount,
   onPull,
   onFetch,
+  onPullOptions,
+  onMore,
   onPush,
+  onSync,
   onCommitClick,
   onStage,
   onUnstage,
@@ -96,9 +104,17 @@ export default function Toolbar({
     onClick?: (e: React.MouseEvent) => void,
     badge?: string,
     disabled?: boolean,
-    badgeColor: BadgeColor = "blue"
+    badgeColor: BadgeColor = "blue",
+    onContextMenu?: (e: React.MouseEvent) => void,
+    title?: string
   ) => (
-    <button className="tb-btn" onClick={onClick} disabled={disabled || busy}>
+    <button
+      className="tb-btn"
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+      disabled={disabled || busy}
+      title={title}
+    >
       <span className="tb-ico">{ico}</span>
       <span className="tb-lbl">
         {lbl}
@@ -122,9 +138,20 @@ export default function Toolbar({
               onPull,
               status && status.behind > 0 ? `${status.behind}` : undefined,
               false,
-              "yellow"
+              "yellow",
+              onPullOptions,
+              "Pull — right-click for options"
             )}
-            {TB(<RefreshCcw size={ICON_SIZE} />, "Fetch", onFetch)}
+            {TB(
+              <RefreshCcw size={ICON_SIZE} />,
+              "Fetch",
+              onFetch,
+              undefined,
+              false,
+              "blue",
+              onPullOptions,
+              "Fetch — right-click for options"
+            )}
             {TB(
               <ArrowUp size={ICON_SIZE} />,
               "Push",
@@ -133,6 +160,7 @@ export default function Toolbar({
               false,
               "green"
             )}
+            {TB(<ArrowDownUp size={ICON_SIZE} />, "Sync", onSync)}
             {TB(
               <GitCommit size={ICON_SIZE} />,
               "Commit",
@@ -161,6 +189,9 @@ export default function Toolbar({
             {/* {TB(<Workflow size={ICON_SIZE} />, "Git-Flow", undefined, undefined, true)} */}
             {TB(<GitMerge size={ICON_SIZE} />, "Merge", onMergeClick)}
             {TB(<GitPullRequestArrow size={ICON_SIZE} />, "Rebase", onRebaseClick)}
+          </div>
+          <div className="tb-group">
+            {TB(<MoreHorizontal size={ICON_SIZE} />, "More", onMore)}
           </div>
           <div className="tb-group">
             <button className="tb-btn" onClick={onToggleTheme}>

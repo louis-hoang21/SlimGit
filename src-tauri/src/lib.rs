@@ -79,8 +79,8 @@ fn commit(repo: String, message: String, amend: bool) -> Result<String, String> 
 // ----- Log -----
 
 #[tauri::command]
-fn log_graph(repo: String, limit: u32, all: bool) -> Result<Vec<CommitInfo>, String> {
-    git::log_graph(&repo, limit, all)
+fn log_graph(repo: String, limit: u32, all: bool, first_parent: bool) -> Result<Vec<CommitInfo>, String> {
+    git::log_graph(&repo, limit, all, first_parent)
 }
 
 #[tauri::command]
@@ -283,6 +283,182 @@ fn mark_resolved(repo: String, paths: Vec<String>) -> Result<(), String> {
     git::mark_resolved(&repo, paths)
 }
 
+// ----- Reset / rename / tags / clone -----
+
+#[tauri::command]
+fn reset(repo: String, hash: String, mode: String) -> Result<String, String> {
+    git::reset(&repo, &hash, &mode)
+}
+
+#[tauri::command]
+fn rename_branch(repo: String, old: String, new: String) -> Result<String, String> {
+    git::rename_branch(&repo, &old, &new)
+}
+
+#[tauri::command]
+fn create_tag(repo: String, name: String, hash: String, message: String) -> Result<String, String> {
+    git::create_tag(&repo, &name, &hash, &message)
+}
+
+#[tauri::command]
+fn delete_tag(repo: String, name: String) -> Result<String, String> {
+    git::delete_tag(&repo, &name)
+}
+
+#[tauri::command]
+fn push_tag(repo: String, remote: String, name: String) -> Result<String, String> {
+    git::push_tag(&repo, &remote, &name)
+}
+
+#[tauri::command]
+fn clone_repo(url: String, dest: String) -> Result<String, String> {
+    git::clone_repo(&url, &dest)
+}
+
+// ----- Remote management -----
+
+#[tauri::command]
+fn remotes_verbose(repo: String) -> Result<Vec<RemoteInfo>, String> {
+    git::remotes_verbose(&repo)
+}
+
+#[tauri::command]
+fn remote_add(repo: String, name: String, url: String) -> Result<String, String> {
+    git::remote_add(&repo, &name, &url)
+}
+
+#[tauri::command]
+fn remote_remove(repo: String, name: String) -> Result<String, String> {
+    git::remote_remove(&repo, &name)
+}
+
+#[tauri::command]
+fn remote_rename(repo: String, old: String, new: String) -> Result<String, String> {
+    git::remote_rename(&repo, &old, &new)
+}
+
+#[tauri::command]
+fn remote_set_url(repo: String, name: String, url: String) -> Result<String, String> {
+    git::remote_set_url(&repo, &name, &url)
+}
+
+// ----- Reflog / clean / config -----
+
+#[tauri::command]
+fn reflog(repo: String, limit: u32) -> Result<Vec<ReflogEntry>, String> {
+    git::reflog(&repo, limit)
+}
+
+#[tauri::command]
+fn clean_preview(repo: String) -> Result<Vec<String>, String> {
+    git::clean_preview(&repo)
+}
+
+#[tauri::command]
+fn clean(repo: String, include_ignored: bool) -> Result<String, String> {
+    git::clean(&repo, include_ignored)
+}
+
+#[tauri::command]
+fn get_config(repo: String, key: String) -> Result<String, String> {
+    git::get_config(&repo, &key)
+}
+
+#[tauri::command]
+fn get_config_effective(repo: String, key: String) -> Result<String, String> {
+    git::get_config_effective(&repo, &key)
+}
+
+#[tauri::command]
+fn set_config(repo: String, key: String, value: String) -> Result<String, String> {
+    git::set_config(&repo, &key, &value)
+}
+
+// ----- Reword / pull options / branch-from-stash -----
+
+#[tauri::command]
+fn reword_head(repo: String, message: String) -> Result<String, String> {
+    git::reword_head(&repo, &message)
+}
+
+#[tauri::command]
+fn pull_opts(repo: String, rebase: bool) -> Result<String, String> {
+    git::pull_opts(&repo, rebase)
+}
+
+#[tauri::command]
+fn fetch_remote(repo: String, remote: String) -> Result<String, String> {
+    git::fetch_remote(&repo, &remote)
+}
+
+#[tauri::command]
+fn stash_branch(repo: String, name: String, index: usize) -> Result<String, String> {
+    git::stash_branch(&repo, &name, index)
+}
+
+// ----- File history / compare / search -----
+
+#[tauri::command]
+fn log_file(repo: String, path: String, limit: u32) -> Result<Vec<CommitInfo>, String> {
+    git::log_file(&repo, &path, limit)
+}
+
+#[tauri::command]
+fn compare_files(repo: String, from: String, to: String) -> Result<Vec<DiffFile>, String> {
+    git::compare_files(&repo, &from, &to)
+}
+
+#[tauri::command]
+fn compare_file_diff(repo: String, from: String, to: String, path: String) -> Result<String, String> {
+    git::compare_file_diff(&repo, &from, &to, &path)
+}
+
+#[tauri::command]
+fn log_search(
+    repo: String,
+    author: String,
+    grep: String,
+    pickaxe: String,
+    limit: u32,
+    all: bool,
+) -> Result<Vec<CommitInfo>, String> {
+    git::log_search(&repo, &author, &grep, &pickaxe, limit, all)
+}
+
+// ----- Partial (hunk) staging -----
+
+#[tauri::command]
+fn stage_hunk(repo: String, patch: String) -> Result<String, String> {
+    git::stage_hunk(&repo, &patch)
+}
+
+#[tauri::command]
+fn unstage_hunk(repo: String, patch: String) -> Result<String, String> {
+    git::unstage_hunk(&repo, &patch)
+}
+
+#[tauri::command]
+fn discard_hunk(repo: String, patch: String) -> Result<String, String> {
+    git::discard_hunk(&repo, &patch)
+}
+
+// ----- Interactive rebase (scripted) -----
+
+#[tauri::command]
+fn reword_commit(repo: String, hash: String, message: String) -> Result<String, String> {
+    git::reword_commit(&repo, &hash, &message)
+}
+
+#[tauri::command]
+fn drop_commit(repo: String, hash: String) -> Result<String, String> {
+    git::drop_commit(&repo, &hash)
+}
+
+#[tauri::command]
+fn squash_commit(repo: String, hash: String) -> Result<String, String> {
+    git::squash_commit(&repo, &hash)
+}
+
 /// Build the native application menu bar (SmartGit-style top menus).
 fn build_menu(app: &tauri::AppHandle) -> Result<tauri::menu::Menu<tauri::Wry>, tauri::Error> {
     use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
@@ -428,6 +604,37 @@ pub fn run() {
             save_file,
             resolve_conflict,
             mark_resolved,
+            reset,
+            rename_branch,
+            create_tag,
+            delete_tag,
+            push_tag,
+            clone_repo,
+            remotes_verbose,
+            remote_add,
+            remote_remove,
+            remote_rename,
+            remote_set_url,
+            reflog,
+            clean_preview,
+            clean,
+            get_config,
+            get_config_effective,
+            set_config,
+            reword_head,
+            pull_opts,
+            fetch_remote,
+            stash_branch,
+            log_file,
+            compare_files,
+            compare_file_diff,
+            log_search,
+            stage_hunk,
+            unstage_hunk,
+            discard_hunk,
+            reword_commit,
+            drop_commit,
+            squash_commit,
         ])
         .run(tauri::generate_context!())
         .expect("error while running SlimGit");

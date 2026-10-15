@@ -8,8 +8,8 @@
     --graph-stroke: #ffffff;
   }
   .dark {
-    --panel-bg: #1c1c20;
-    --graph-stroke: #1c1c20;
+    --panel-bg: #24292e;
+    --graph-stroke: #24292e;
   }
   html,
   body,
@@ -50,7 +50,12 @@
 @layer components {
   /* ---------- Welcome ---------- */
   .welcome {
-    @apply h-full grid grid-cols-2 bg-neutral-200 dark:bg-zinc-950;
+    @apply h-full grid grid-cols-2 bg-neutral-200 dark:bg-zinc-950 relative;
+  }
+  .welcome-theme-toggle {
+    @apply absolute top-3 right-3 z-10 flex items-center justify-center w-8 h-8 p-0
+      rounded-lg bg-white/70 dark:bg-zinc-800/70 border-neutral-200 dark:border-zinc-700
+      text-neutral-600 dark:text-zinc-300 backdrop-blur;
   }
   .welcome-pane {
     @apply min-w-0 flex items-center justify-center px-10;
@@ -59,7 +64,7 @@
     @apply bg-white dark:bg-zinc-900 border-r border-neutral-200 dark:border-zinc-800;
   }
   .welcome-kicker {
-    @apply text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-600 dark:text-orange-400 mb-3;
+    @apply text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-600 dark:text-blue-400 mb-3;
   }
   .welcome-kicker-blue {
     @apply text-[11px] font-bold uppercase tracking-[0.18em] text-blue-600 dark:text-blue-400 mb-3; font-size: 14px
@@ -263,24 +268,43 @@
 
   /* ---------- Panel ---------- */
   .panel {
-    @apply flex flex-col min-h-0 bg-white dark:bg-[#1c1c20]
+    @apply flex flex-col min-h-0 bg-white dark:bg-[#24292e]
       border border-neutral-200 dark:border-zinc-800 rounded-lg overflow-hidden
       shadow-sm;
   }
   /* Native macOS: frosted panels floating over the window vibrancy, with
      hairline borders instead of hard 1px lines. */
   .is-tauri .panel {
-    @apply bg-white/75 dark:bg-[#1c1c20]/65 backdrop-blur-xl
+    @apply bg-white/75 dark:bg-[#24292e]/65 backdrop-blur-xl
       border-black/[0.08] dark:border-white/[0.08]
       shadow-[0_1px_3px_rgba(0,0,0,0.06)] dark:shadow-[0_1px_3px_rgba(0,0,0,0.35)];
+  }
+  /* Dark mode: opaque GitHub-Desktop-style surfaces. The macOS window
+     vibrancy washes translucent panels into a flat milky grey in dark mode,
+     so force solid backgrounds and drop the backdrop blur there. */
+  .dark body.is-tauri,
+  .dark body.is-tauri #root,
+  .dark .is-tauri .sg-app {
+    background: #1b1f24;
+  }
+  .dark .is-tauri .sg-toolbar {
+    @apply bg-[#24292e] backdrop-blur-none;
+    border-bottom-color: #3f454d;
+  }
+  .dark .is-tauri .panel {
+    @apply bg-[#24292e] backdrop-blur-none;
+    border-color: #3f454d;
+  }
+  .dark .is-tauri .panel-hd {
+    border-bottom-color: #3f454d;
   }
   .is-tauri .panel-hd {
     @apply border-black/[0.08] dark:border-white/[0.08];
   }
   .panel-hd {
     @apply flex items-center h-[32px] px-2.5 flex-shrink-0 text-[11px] font-semibold
-      text-neutral-800 dark:text-zinc-200
-      bg-[rgb(245_158_11_/_10%)] dark:bg-zinc-800/80
+      text-neutral-700 dark:text-zinc-200
+      bg-neutral-100 dark:bg-zinc-800/80
       border-b border-neutral-200 dark:border-zinc-700 tracking-wide;
   }
   .panel-hd .x {
@@ -303,9 +327,10 @@
     background-image: repeating-linear-gradient(
       to bottom,
       transparent 0px,
-      transparent 28px,
-      rgb(250 250 250) 28px,
-      rgb(250 250 250) 56px
+      rgb(255 255 255) 0px,
+      rgb(255 255 255) 28px,
+      rgb(232 234 237) 28px,
+      rgb(232 234 237) 56px
     );
     background-position: 0 28px;
     background-attachment: local;
@@ -315,8 +340,8 @@
       to bottom,
       transparent 0px,
       transparent 28px,
-      rgba(39 39 42 / 0.4) 28px,
-      rgba(39 39 42 / 0.4) 56px
+      rgba(39 39 42 / 0.5) 28px,
+      rgba(39 39 42 / 0.5) 56px
     );
   }
   .files-panel-bd:focus {
@@ -476,10 +501,13 @@
     @apply bg-blue-400/60;
   }
   .ftable tbody tr {
-    @apply cursor-pointer transition-colors border-b border-neutral-100 dark:border-zinc-800;
+    @apply cursor-pointer transition-colors;
+  }
+  .ftable tbody tr:nth-child(odd) {
+    @apply bg-white dark:bg-transparent;
   }
   .ftable tbody tr:nth-child(even) {
-    @apply bg-neutral-50 dark:bg-zinc-800/40;
+    @apply bg-[#e8eaed] dark:bg-zinc-800/50;
   }
   .ftable tbody tr:hover {
     @apply bg-blue-50 dark:bg-zinc-700/60;
@@ -587,6 +615,9 @@
   .diff-empty {
     @apply p-5 text-neutral-400 dark:text-zinc-500 text-center;
   }
+  .diff-empty-fill {
+    @apply flex-1 flex items-center justify-center min-h-0;
+  }
   .diff-body {
     flex: 1;
     overflow: auto;
@@ -619,8 +650,8 @@
     --del-sign: #cf222e;
   }
   .diff-body.code-dark {
-    background: #0d1117;
-    color: #c9d1d9;
+    background: #1b1f24;
+    color: #d1d5da;
     --t-kw: #ff7b72;
     --t-fn: #d2a8ff;
     --t-type: #d2a8ff;
@@ -628,10 +659,10 @@
     --t-num: #79c0ff;
     --t-com: #8b949e;
     --t-punct: #8b949e;
-    --ln-bg: #161b22;
-    --ln-fg: #6e7681;
-    --ln-border: #21262d;
-    --ctx-bg: #0d1117;
+    --ln-bg: #22272e;
+    --ln-fg: #768390;
+    --ln-border: #2f363d;
+    --ctx-bg: #1b1f24;
     --add-bg: rgba(46, 160, 67, 0.15);
     --del-bg: rgba(248, 81, 73, 0.15);
     --hunk-bg: rgba(56, 139, 253, 0.15);
@@ -734,6 +765,77 @@
     height: 1px;
     line-height: 1px;
     overflow: hidden;
+  }
+
+  /* ---------- Side-by-side (split) diff — SmartGit style ---------- */
+  .ds-colhd {
+    @apply flex flex-shrink-0 text-[10px] font-semibold uppercase tracking-wide
+      text-neutral-500 dark:text-zinc-400
+      bg-neutral-50 dark:bg-zinc-900/60
+      border-b border-neutral-200 dark:border-zinc-800;
+  }
+  .ds-colhd-cell {
+    @apply flex-1 min-w-0 px-2.5 py-1 truncate;
+  }
+  .ds-colhd-cell + .ds-colhd-cell {
+    @apply border-l border-neutral-200 dark:border-zinc-800;
+  }
+  .ds-row {
+    display: flex;
+    white-space: pre;
+    background: var(--ctx-bg);
+  }
+  .ds-half {
+    display: flex;
+    width: 50%;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .ds-half + .ds-half {
+    border-left: 1px solid var(--ln-border);
+  }
+  .ds-ln {
+    width: 46px;
+    flex-shrink: 0;
+    text-align: right;
+    padding-right: 7px;
+    color: var(--ln-fg);
+    background: var(--ln-bg);
+    border-right: 1px solid var(--ln-border);
+    user-select: none;
+  }
+  .ds-dt {
+    padding-left: 6px;
+    padding-right: 10px;
+    flex: 1;
+    overflow: hidden;
+  }
+  .ds-del {
+    background: var(--del-bg);
+  }
+  .ds-del .ds-ln {
+    background: var(--del-bg);
+    color: var(--del-sign);
+  }
+  .ds-add {
+    background: var(--add-bg);
+  }
+  .ds-add .ds-ln {
+    background: var(--add-bg);
+    color: var(--add-sign);
+  }
+  /* Empty counterpart cell (line exists only on the other side). */
+  .ds-empty {
+    background: var(--ln-bg);
+    opacity: 0.5;
+  }
+  .ds-hunk {
+    background: var(--hunk-bg);
+    color: var(--hunk-fg);
+    padding-left: 8px;
+  }
+  .ds-hunk .dt {
+    color: var(--hunk-fg);
   }
 
   /* ---------- Journal ---------- */
@@ -897,7 +999,7 @@
     @apply text-red-600 dark:text-red-400 font-semibold;
   }
   .conflict-editor {
-    @apply flex-1 resize-none bg-white dark:bg-[#1c1c20] text-neutral-800 dark:text-zinc-100
+    @apply flex-1 resize-none bg-white dark:bg-[#24292e] text-neutral-800 dark:text-zinc-100
       border-0 p-2.5 font-mono text-[12px] leading-[1.5] focus:outline-none;
   }
   .conflict-hint {
@@ -980,8 +1082,90 @@
     @apply shrink-0 cursor-row-resize bg-neutral-200 dark:bg-zinc-700 hover:bg-blue-400 transition-colors;
     height: 4px;
   }
+  /* SmartGit-style Log layout: top row [graph | detail+files] over bottom diff. */
+  .logs-body {
+    @apply flex flex-col flex-1 min-h-0 overflow-hidden;
+  }
+  .logs-top {
+    @apply flex min-h-0 overflow-hidden;
+  }
+  .logs-graph-pane {
+    @apply flex flex-col flex-1 min-w-0 overflow-hidden;
+  }
+  .logs-graph-scroll {
+    @apply flex-1 overflow-auto min-h-0;
+  }
+  .logs-right {
+    @apply flex flex-col shrink-0 min-h-0 overflow-hidden
+      border-l border-neutral-200 dark:border-zinc-700;
+  }
+  .logs-files-pane {
+    @apply flex flex-col flex-1 min-h-0 overflow-hidden
+      border-t border-neutral-200 dark:border-zinc-700;
+  }
+  .logs-bottom {
+    @apply flex flex-col min-h-0 overflow-hidden
+      border-t border-neutral-200 dark:border-zinc-700;
+  }
+  .logs-bottom-diff {
+    @apply flex flex-col flex-1 min-h-0 overflow-hidden;
+  }
+  .logs-wt-row {
+    @apply flex items-center gap-2 px-2.5 cursor-pointer
+      border-b border-neutral-200 dark:border-zinc-800
+      bg-neutral-50 dark:bg-zinc-900/50
+      hover:bg-neutral-100 dark:hover:bg-blue-500/[0.14];
+    height: 26px;
+  }
+  .logs-wt-row.sel {
+    @apply bg-blue-100 dark:bg-blue-500/25;
+  }
+  .logs-wt-ico {
+    @apply text-amber-500;
+  }
+  .logs-wt-note {
+    @apply text-neutral-400 dark:text-zinc-500 text-[11px];
+  }
+  .lcd-actions {
+    @apply flex gap-2 mt-1.5;
+  }
+  .lcd-actions button {
+    @apply text-[12px] px-2.5 py-1;
+  }
+  .logs-detail-empty-box {
+    @apply text-neutral-400 dark:text-zinc-500 text-[12px];
+  }
   .logs-detail {
     @apply flex shrink-0 overflow-hidden;
+  }
+  .logs-detail-col {
+    @apply flex-col;
+  }
+  .logs-detail-row {
+    @apply flex flex-1 min-h-0 overflow-hidden;
+  }
+  /* Commit detail box (SmartGit-style): hash + meta line, then full message. */
+  .logs-commit-detail {
+    @apply shrink-0 px-3 py-2 border-b border-neutral-200 dark:border-zinc-700
+      bg-neutral-50 dark:bg-zinc-900/60 overflow-auto;
+    max-height: 140px;
+  }
+  .lcd-line {
+    @apply flex items-baseline gap-2 flex-wrap mb-1;
+  }
+  .lcd-hash {
+    @apply font-mono text-[12px] font-semibold text-blue-600 dark:text-blue-400;
+  }
+  .lcd-meta {
+    @apply text-[11px] text-neutral-500 dark:text-zinc-400;
+  }
+  .lcd-msg {
+    @apply font-sans text-[12px] text-neutral-800 dark:text-zinc-100 whitespace-pre-wrap
+      m-0 leading-snug select-text;
+  }
+  /* Merge commits are de-emphasised in the graph, like SmartGit. */
+  .grow.merge .c-subject {
+    @apply text-neutral-400 dark:text-zinc-500 italic;
   }
   .logs-detail-empty {
     @apply items-center justify-center text-[13px] text-neutral-400 dark:text-zinc-500;
@@ -1126,5 +1310,176 @@
   }
   .toast-bar {
     @apply h-[3px] bg-white/40 transition-none;
+  }
+
+  /* ---------- Toolbar extras (caret / more) ---------- */
+  .tb-btn-caret {
+    @apply flex items-center justify-center px-1;
+    min-width: 22px;
+  }
+
+  /* ---------- Per-hunk staging controls ---------- */
+  .hunk-acts {
+    @apply inline-flex items-center gap-1.5 ml-3;
+  }
+  .hunk-btn {
+    @apply text-[10px] font-semibold px-1.5 py-0.5 rounded border
+      border-neutral-300 dark:border-zinc-600 bg-white/80 dark:bg-zinc-800
+      text-neutral-700 dark:text-zinc-200 hover:bg-blue-50 dark:hover:bg-zinc-700
+      cursor-pointer transition-colors;
+  }
+  .hunk-btn-danger {
+    @apply hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/20 dark:hover:text-red-400;
+  }
+
+  /* ---------- Remotes dialog ---------- */
+  .rmt-list {
+    @apply flex flex-col border border-neutral-200 dark:border-zinc-700 rounded-md overflow-auto;
+    max-height: 260px;
+  }
+  .rmt-row {
+    @apply flex items-center gap-2 px-2 py-1.5 border-b border-neutral-100 dark:border-zinc-800 text-[12px];
+  }
+  .rmt-row:last-child {
+    @apply border-b-0;
+  }
+  .rmt-name {
+    @apply font-semibold text-neutral-800 dark:text-zinc-100 shrink-0;
+    width: 90px;
+  }
+  .rmt-url {
+    @apply flex-1 min-w-0 truncate text-neutral-500 dark:text-zinc-400 font-mono text-[11px];
+  }
+  .rmt-inp {
+    @apply flex-1 py-1 text-[12px];
+  }
+  .rmt-ibtn {
+    @apply shrink-0 p-1 rounded text-neutral-500 dark:text-zinc-400
+      hover:bg-neutral-100 dark:hover:bg-zinc-700 cursor-pointer transition-colors;
+  }
+  .rmt-ibtn-txt {
+    @apply text-[10px] font-semibold;
+  }
+  .rmt-ibtn-danger {
+    @apply hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/20;
+  }
+  .rmt-empty {
+    @apply flex items-center justify-center text-[12px] text-neutral-400 dark:text-zinc-500 py-5;
+  }
+  .rmt-add {
+    @apply flex flex-col gap-2 mt-1;
+  }
+  .rmt-add-ft {
+    @apply flex items-center justify-end gap-2;
+  }
+  .rmt-addbtn {
+    @apply flex items-center gap-1.5 self-start text-[12px] font-medium px-2.5 py-1.5 rounded-md
+      border border-neutral-300 dark:border-zinc-600 bg-white dark:bg-zinc-700
+      text-neutral-700 dark:text-zinc-200 hover:bg-neutral-100 dark:hover:bg-zinc-600
+      cursor-pointer transition-colors mt-1;
+  }
+  .rmt-hint {
+    @apply text-[11px] text-neutral-400 dark:text-zinc-500 truncate;
+  }
+
+  /* ---------- Repo settings ---------- */
+  .set-field {
+    @apply flex flex-col gap-1;
+  }
+  .set-label {
+    @apply text-[11px] font-medium text-neutral-500 dark:text-zinc-400;
+  }
+
+  /* ---------- Clean dialog ---------- */
+  .clean-warn {
+    @apply flex items-center gap-2 text-[12px] text-amber-700 dark:text-amber-300
+      bg-amber-50 dark:bg-amber-500/15 rounded-md px-2.5 py-2;
+  }
+  .clean-list {
+    @apply flex flex-col border border-neutral-200 dark:border-zinc-700 rounded-md overflow-auto
+      bg-neutral-50 dark:bg-zinc-950 p-1 font-mono text-[11px];
+    max-height: 240px;
+    min-height: 80px;
+  }
+  .clean-row {
+    @apply px-1.5 py-0.5 truncate text-neutral-700 dark:text-zinc-300;
+  }
+
+  /* ---------- Reflog panel ---------- */
+  .reflog-scroll {
+    @apply overflow-auto flex-1 min-h-0;
+  }
+  .reflog-row {
+    @apply flex items-center gap-2.5 px-3 py-1.5 cursor-pointer text-[12px]
+      border-b border-neutral-100 dark:border-zinc-800
+      hover:bg-blue-50 dark:hover:bg-zinc-700/60 transition-colors;
+  }
+  .reflog-sel {
+    @apply shrink-0 truncate font-mono text-[11px] text-purple-600 dark:text-purple-400;
+    width: 150px;
+  }
+  .reflog-hash {
+    @apply shrink-0 font-mono text-[11px] text-neutral-500 dark:text-zinc-400;
+    width: 70px;
+  }
+  .reflog-subj {
+    @apply flex-1 min-w-0 truncate text-neutral-800 dark:text-zinc-100;
+  }
+
+  /* ---------- File history ---------- */
+  .fh-row {
+    @apply flex flex-col gap-0.5 px-2.5 py-1.5 cursor-pointer
+      border-b border-neutral-100 dark:border-zinc-800
+      hover:bg-blue-50 dark:hover:bg-zinc-700/60 transition-colors;
+  }
+  .fh-row.sel {
+    @apply bg-blue-100 dark:bg-blue-500/30;
+  }
+  .fh-subj {
+    @apply text-[12px] text-neutral-800 dark:text-zinc-100 truncate;
+  }
+  .fh-meta {
+    @apply flex items-center gap-2 text-[10px] text-neutral-500 dark:text-zinc-400;
+  }
+  .fh-hash {
+    @apply font-mono;
+  }
+  .fh-author {
+    @apply truncate flex-1 min-w-0;
+  }
+  .fh-date {
+    @apply shrink-0;
+  }
+
+  /* ---------- Compare modal ---------- */
+  .cmp-refs {
+    @apply flex items-center gap-2 ml-2;
+  }
+  .cmp-arrow {
+    @apply text-neutral-400 dark:text-zinc-500 shrink-0;
+  }
+
+  /* ---------- Logs advanced search ---------- */
+  .logs-search-toggle {
+    @apply shrink-0 p-1.5 rounded-md border border-neutral-300 dark:border-zinc-600
+      bg-white dark:bg-zinc-800 text-neutral-500 dark:text-zinc-400
+      hover:bg-neutral-100 dark:hover:bg-zinc-700 cursor-pointer transition-colors;
+  }
+  .logs-search-toggle.active {
+    @apply border-blue-500 text-blue-600 dark:text-blue-400;
+  }
+  .logs-adv {
+    @apply flex items-center gap-2 px-3 py-2 border-b border-neutral-200 dark:border-zinc-700
+      bg-neutral-50 dark:bg-zinc-800/60 shrink-0;
+  }
+  .logs-adv-inp {
+    @apply flex-1 min-w-0 text-[12px] bg-white dark:bg-zinc-800 border border-neutral-300 dark:border-zinc-600
+      rounded-md px-2 py-1 text-neutral-800 dark:text-zinc-100
+      placeholder-neutral-400 dark:placeholder-zinc-500 focus:outline-none focus:border-blue-500;
+  }
+  .logs-adv-clear {
+    @apply shrink-0 text-[12px] px-2.5 py-1 rounded-md border border-neutral-300 dark:border-zinc-600
+      bg-white dark:bg-zinc-700 text-neutral-600 dark:text-zinc-300
+      hover:bg-neutral-100 dark:hover:bg-zinc-600 cursor-pointer;
   }
 }

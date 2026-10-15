@@ -1,5 +1,5 @@
 // Generates a 1024x1024 PNG source icon (no external deps) for `tauri icon`.
-// Design: light-blue rounded-square background with an orange git-branch motif
+// Design: white rounded-square background with a navy git-branch motif
 // (a top node, a central hub, a right node, and an elbow down to a bottom node).
 import { deflateSync } from "node:zlib";
 import { writeFileSync } from "node:fs";
@@ -17,11 +17,11 @@ function px(x, y, r, g, b, a) {
 }
 
 // Palette.
-const BG = [0x88, 0xc9, 0xf2]; // light blue
-const OR_TOP = [0xf9, 0x9b, 0x33]; // lighter orange (top)
-const OR_BOT = [0xf0, 0x4e, 0x1c]; // deeper orange (bottom)
+const BG = [0xff, 0xff, 0xff]; // white badge background
+const OR_TOP = [0x30, 0x3f, 0x4f]; // charcoal-navy, lightened a touch (top)
+const OR_BOT = [0x1a, 0x25, 0x31]; // dark navy (bottom)
 
-// Vertical gradient for the orange motif.
+// Vertical gradient for the navy motif.
 const Y_MIN = 170;
 const Y_MAX = 870;
 function orange(y) {

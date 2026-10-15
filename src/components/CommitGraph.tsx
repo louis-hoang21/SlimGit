@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { CommitInfo } from "../types";
-import { computeGraph, GRAPH_COLORS, laneColor } from "../graph";
+import { computeGraph, GRAPH_COLORS, laneColor, rowTextOffset } from "../graph";
 
 interface Props {
   commits: CommitInfo[];
@@ -9,9 +9,9 @@ interface Props {
   onContext: (hash: string, x: number, y: number) => void;
 }
 
-const ROW_H = 28;
+const ROW_H = 24;
 const COL_W = 14;
-const PAD = 12;
+const PAD = 8;
 
 function fmtDate(ts: number): string {
   const d = new Date(ts * 1000);
@@ -51,16 +51,10 @@ export default function CommitGraph({ commits, selected, onSelect, onContext }: 
   const totalH = commits.length * ROW_H;
   const nodeCol = new Map(layout.nodes.map((n) => [n.commit.hash, n.col]));
 
-  const graphColW = useMemo(() => {
-    const sample = layout.rowMaxCol.slice(0, 30);
-    const localMax = sample.length ? Math.max(...sample) : layout.maxCol;
-    return Math.min((localMax + 1) * COL_W + PAD, 50);
-  }, [layout.rowMaxCol, layout.maxCol]);
-
+  // Graph is drawn behind full-width rows; each row's text starts right after
+  // the lanes in its own band (SmartGit-style), so there is no empty gap.
   return (
-    <div style={{ display: "flex", height: totalH }}>
-      {/* ── Left: SVG graph column ── */}
-      <div style={{ width: graphColW, flexShrink: 0, position: "relative", overflow: "hidden" }}>
+    <div style={{ position: "relative", height: totalH }}>
         <svg
           className="graph-svg"
           width={svgW}
@@ -75,9 +69,9 @@ export default function CommitGraph({ commits, selected, onSelect, onContext }: 
             const d =
               x1 === x2
                 ? `M ${x1} ${y1} L ${x2} ${y2}`
-                : `M ${x1} ${y1} C ${x1} ${y1 + ROW_H * 0.6}, ${x2} ${y1 + ROW_H * 0.4}, ${x2} ${y1 + ROW_H} L ${x2} ${y2}`;
+                : `M ${x1} ${y1} C ${x1} ${y1 + ROW_H * 0.5}, ${x2} ${y1 + ROW_H * 0.5}, ${x2} ${y1 + ROW_H} L ${x2} ${y2}`;
             return (
-              <path key={i} d={d} fill="none" stroke={GRAPH_COLORS[e.color]} strokeWidth={2} />
+              <path key={i} d={d} fill="none" stroke={GRAPH_COLORS[e.color]} strokeWidth={1.6} />
             );
           })}
           {layout.nodes.map((n) => (
@@ -86,34 +80,22 @@ export default function CommitGraph({ commits, selected, onSelect, onContext }: 
               cx={n.col * COL_W + COL_W / 2 + PAD / 2}
               cy={n.row * ROW_H + ROW_H / 2}
               r={4}
-              fill={laneColor(n.col)}
-              stroke="var(--graph-stroke)"
-              strokeWidth={1.5}
+              fill="var(--graph-stroke)"
+              stroke={laneColor(n.col)}
+              strokeWidth={2}
             />
           ))}
         </svg>
 
-        {/* Transparent click targets per row so clicking the graph also selects */}
-        {commits.map((c) => (
-          <div
-            key={c.hash}
-            style={{ height: ROW_H, position: "relative", zIndex: 20 }}
-            onClick={() => onSelect(c.hash)}
-            onContextMenu={(e) => { e.preventDefault(); onContext(c.hash, e.clientX, e.clientY); }}
-          />
-        ))}
-      </div>
-
-      {/* ── Right: text rows column ── */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        {commits.map((c) => {
+      <div>
+        {commits.map((c, i) => {
           const badges = refBadges(c.refs);
           const col = nodeCol.get(c.hash) ?? 0;
           return (
             <div
               key={c.hash}
               className={`grow ${selected === c.hash ? "sel" : ""}`}
-              style={{ height: ROW_H, paddingLeft: 6 }}
+              style={{ height: ROW_H, paddingLeft: rowTextOffset(layout, i, COL_W, PAD) }}
               onClick={() => onSelect(c.hash)}
               onContextMenu={(e) => { e.preventDefault(); onContext(c.hash, e.clientX, e.clientY); }}
             >
@@ -127,7 +109,7 @@ export default function CommitGraph({ commits, selected, onSelect, onContext }: 
                     {b.label}
                   </span>
                 ))}
-                {c.subject}
+                {c.subject.length > 90 ? `${c.subject.slice(0, 90)}…` : c.subject}
               </span>
               <span className="c-author">{c.author}</span>
               <span className="c-hash">{c.short}</span>

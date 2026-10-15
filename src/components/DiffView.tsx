@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+export type HunkAction = "stage" | "unstage" | "discard";
+
 interface Props {
   diff: string;
   title?: string;
@@ -7,6 +9,39 @@ interface Props {
   theme?: "light" | "dark";
   /** "old" renders only the base-branch side of the diff (single column) */
   side?: "old";
+  /** "split" renders SmartGit-style side-by-side old|new columns */
+  layout?: "split";
+  /** Column headers in split layout. */
+  oldLabel?: string;
+  newLabel?: string;
+  /**
+   * Enables per-hunk staging controls (split layout only). "unstaged" offers
+   * Stage/Discard, "staged" offers Unstage. Omit/null to hide the controls.
+   */
+  hunkMode?: "staged" | "unstaged" | null;
+  /** Invoked with a minimal single-hunk unified-diff patch. */
+  onHunkAction?: (patch: string, action: HunkAction) => void;
+}
+
+// Split a raw unified diff into its file header (everything before the first
+// `@@`) and one string per hunk (the `@@` line plus its body). A single-hunk
+// patch = header + one hunk, which `git apply` accepts for partial staging.
+function extractHunkPatches(lines: string[]): { header: string; hunks: string[] } {
+  const headerLines: string[] = [];
+  const hunks: string[] = [];
+  let cur: string[] | null = null;
+  for (const line of lines) {
+    if (line.startsWith("@@")) {
+      if (cur) hunks.push(cur.join("\n"));
+      cur = [line];
+    } else if (cur) {
+      cur.push(line);
+    } else {
+      headerLines.push(line);
+    }
+  }
+  if (cur) hunks.push(cur.join("\n"));
+  return { header: headerLines.join("\n"), hunks };
 }
 
 type Kind = "hunk" | "add" | "del" | "meta" | "ctx";
@@ -103,10 +138,144 @@ function parseSplitRows(lines: string[]): SplitRow[] {
   return rows;
 }
 
-export default function DiffView({ diff, title, empty, theme = "light", side }: Props) {
+// Pair diff rows into aligned left(old)/right(new) columns, SmartGit-style:
+// a run of deletions is zipped with the following run of additions, extra
+// lines on either side get an empty cell so both columns stay in lockstep.
+type Cell = { ln: number; content: string; tone: "ctx" | "del" | "add" } | null;
+type DualRow = { kind: "hunk"; text: string } | { kind: "pair"; left: Cell; right: Cell };
+
+function buildDualRows(rows: SplitRow[]): DualRow[] {
+  const out: DualRow[] = [];
+  let dels: Extract<SplitRow, { kind: "del" }>[] = [];
+  let adds: Extract<SplitRow, { kind: "add" }>[] = [];
+  const flush = () => {
+    const n = Math.max(dels.length, adds.length);
+    for (let i = 0; i < n; i++) {
+      const d = dels[i];
+      const a = adds[i];
+      out.push({
+        kind: "pair",
+        left: d ? { ln: d.oldLn, content: d.content, tone: "del" } : null,
+        right: a ? { ln: a.newLn, content: a.content, tone: "add" } : null,
+      });
+    }
+    dels = [];
+    adds = [];
+  };
+  for (const r of rows) {
+    if (r.kind === "hunk") {
+      flush();
+      out.push({ kind: "hunk", text: r.text });
+    } else if (r.kind === "del") {
+      dels.push(r);
+    } else if (r.kind === "add") {
+      adds.push(r);
+    } else {
+      flush();
+      out.push({
+        kind: "pair",
+        left: { ln: r.oldLn, content: r.content, tone: "ctx" },
+        right: { ln: r.newLn, content: r.content, tone: "ctx" },
+      });
+    }
+  }
+  flush();
+  return out;
+}
+
+function SplitCell({ cell }: { cell: Cell }) {
+  if (!cell) return <div className="ds-half ds-empty" />;
+  const toneCls = cell.tone === "del" ? "ds-del" : cell.tone === "add" ? "ds-add" : "";
+  return (
+    <div className={`ds-half ${toneCls}`}>
+      <span className="ds-ln">{cell.ln}</span>
+      <span className="ds-dt">{highlight(cell.content || " ")}</span>
+    </div>
+  );
+}
+
+export default function DiffView({
+  diff, title, empty, theme = "light", side, layout, oldLabel, newLabel,
+  hunkMode, onHunkAction,
+}: Props) {
   const lines = diff.length ? diff.split("\n") : [];
   let oldNo = 0;
   let newNo = 0;
+
+  if (layout === "split") {
+    if (lines.length === 0) {
+      return (
+        <div className="diff">
+          <div className="diff-empty diff-empty-fill">{empty ?? "No changes to display"}</div>
+        </div>
+      );
+    }
+    const dual = buildDualRows(parseSplitRows(lines));
+    const hunkControls = Boolean(hunkMode && onHunkAction);
+    const { header, hunks } = hunkControls
+      ? extractHunkPatches(lines)
+      : { header: "", hunks: [] as string[] };
+    // Build a self-contained single-hunk patch (header + one hunk + newline).
+    const patchFor = (idx: number) => `${header}\n${hunks[idx]}\n`;
+    let hunkIdx = -1;
+    return (
+      <div className="diff">
+        {(oldLabel || newLabel) && (
+          <div className="ds-colhd">
+            <span className="ds-colhd-cell">{oldLabel ?? "Old"}</span>
+            <span className="ds-colhd-cell">{newLabel ?? "New"}</span>
+          </div>
+        )}
+        {lines.length === 0 && <div className="diff-empty">{empty ?? "No changes to display"}</div>}
+        <div className={`diff-body code-${theme}`}>
+          {dual.map((row, i) => {
+            if (row.kind === "hunk") {
+              hunkIdx++;
+              const idx = hunkIdx;
+              return (
+                <div className="ds-row ds-hunk" key={i}>
+                  <span className="dt">{row.text}</span>
+                  {hunkControls && hunks[idx] !== undefined && (
+                    <span className="hunk-acts">
+                      {hunkMode === "unstaged" ? (
+                        <>
+                          <button
+                            className="hunk-btn"
+                            onClick={() => onHunkAction!(patchFor(idx), "stage")}
+                          >
+                            Stage hunk
+                          </button>
+                          <button
+                            className="hunk-btn hunk-btn-danger"
+                            onClick={() => onHunkAction!(patchFor(idx), "discard")}
+                          >
+                            Discard
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          className="hunk-btn"
+                          onClick={() => onHunkAction!(patchFor(idx), "unstage")}
+                        >
+                          Unstage hunk
+                        </button>
+                      )}
+                    </span>
+                  )}
+                </div>
+              );
+            }
+            return (
+              <div className="ds-row" key={i}>
+                <SplitCell cell={row.left} />
+                <SplitCell cell={row.right} />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   if (side === "old") {
     // Render only the base-branch version: context + deleted lines.

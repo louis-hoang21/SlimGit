@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Default capability set for SlimGit","local":true,"windows":["main"],"permissions":["core:default","dialog:default","dialog:allow-open"]}}
+{"default":{"identifier":"default","description":"Default capability set for SlimGit","local":true,"windows":["main","repo-*"],"permissions":["core:default","core:webview:allow-create-webview-window","dialog:default","dialog:allow-open"]}}

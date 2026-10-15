@@ -76,6 +76,20 @@ pub struct BranchCompareDiff {
     pub diff: String,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct RemoteInfo {
+    pub name: String,
+    pub url: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ReflogEntry {
+    pub selector: String,
+    pub hash: String,
+    pub short: String,
+    pub subject: String,
+}
+
 // ---------- Low level git runner ----------
 
 /// Run a git command in `repo`, returning stdout on success.
@@ -107,6 +121,39 @@ fn run_combined(repo: &str, args: &[&str]) -> Result<String, String> {
         .output()
         .map_err(|e| format!("failed to spawn git: {e}"))?;
 
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let combined = format!("{stdout}{stderr}");
+    if output.status.success() {
+        Ok(combined)
+    } else {
+        Err(combined)
+    }
+}
+
+/// Run git feeding `input` to stdin (used for `git apply` with a patch).
+/// Returns combined stdout+stderr; Err on non-zero exit.
+fn run_stdin(repo: &str, args: &[&str], input: &str) -> Result<String, String> {
+    use std::io::Write;
+    use std::process::Stdio;
+    let mut child = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("failed to spawn git: {e}"))?;
+    child
+        .stdin
+        .take()
+        .ok_or("no stdin")?
+        .write_all(input.as_bytes())
+        .map_err(|e| format!("write stdin: {e}"))?;
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("git wait: {e}"))?;
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
     let combined = format!("{stdout}{stderr}");
@@ -413,16 +460,29 @@ pub fn log_branch(repo: &str, branch: &str, limit: u32) -> Result<Vec<CommitInfo
     let limit_arg = format!("-n{}", limit);
     let pretty = format!("--pretty=format:{}", fmt);
     let rev = if branch.is_empty() { "HEAD" } else { branch };
-    let raw = run(repo, &["log", "--date-order", &pretty, &limit_arg, rev])?;
+    // topo-order keeps each merged branch's commits grouped right under its
+    // merge (SmartGit layout) instead of interleaving them by date, which
+    // produced long parallel lanes.
+    let raw = run(repo, &["log", "--topo-order", &pretty, &limit_arg, rev])?;
     Ok(parse_log_output(&raw))
 }
 
-pub fn log_graph(repo: &str, limit: u32, all: bool) -> Result<Vec<CommitInfo>, String> {
+pub fn log_graph(
+    repo: &str,
+    limit: u32,
+    all: bool,
+    first_parent: bool,
+) -> Result<Vec<CommitInfo>, String> {
     let unit = '\u{1f}';
     let fmt = format!("%H{u}%h{u}%P{u}%an{u}%ae{u}%at{u}%s{u}%D", u = unit);
     let limit_arg = format!("-n{}", limit);
     let pretty = format!("--pretty=format:{}", fmt);
     let mut args: Vec<&str> = vec!["log", "--topo-order", &pretty, &limit_arg];
+    if first_parent {
+        // Only the commits that live on the current branch itself (like the
+        // SmartGit journal) — don't expand merged-in branch commits.
+        args.push("--first-parent");
+    }
     if all {
         // Show every ref EXCEPT the internal stash commits.
         args.push("--branches");
@@ -431,6 +491,18 @@ pub fn log_graph(repo: &str, limit: u32, all: bool) -> Result<Vec<CommitInfo>, S
     } else {
         args.push("HEAD");
     }
+    let raw = run(repo, &args)?;
+    Ok(parse_log_output(&raw))
+}
+
+/// Run a `git log …` (extra[0] must be "log") with the standard CommitInfo
+/// pretty-format injected, and parse the result.
+fn log_custom(repo: &str, extra: &[&str]) -> Result<Vec<CommitInfo>, String> {
+    let unit = '\u{1f}';
+    let fmt = format!("%H{u}%h{u}%P{u}%an{u}%ae{u}%at{u}%s{u}%D", u = unit);
+    let pretty = format!("--pretty=format:{}", fmt);
+    let mut args: Vec<&str> = vec!["log", &pretty];
+    args.extend_from_slice(&extra[1..]);
     let raw = run(repo, &args)?;
     Ok(parse_log_output(&raw))
 }
@@ -668,6 +740,335 @@ pub fn tags(repo: &str) -> Result<Vec<String>, String> {
         .filter(|l| !l.trim().is_empty())
         .map(|s| s.to_string())
         .collect())
+}
+
+// ---------- Reset / rename / tags / clone ----------
+
+/// Move HEAD (and optionally index/worktree) to `hash`.
+/// `mode`: "soft" (keep index+worktree) | "mixed" (keep worktree) | "hard" (discard).
+pub fn reset(repo: &str, hash: &str, mode: &str) -> Result<String, String> {
+    let flag = match mode {
+        "soft" => "--soft",
+        "hard" => "--hard",
+        _ => "--mixed",
+    };
+    run_combined(repo, &["reset", flag, hash])
+}
+
+pub fn rename_branch(repo: &str, old: &str, new: &str) -> Result<String, String> {
+    run_combined(repo, &["branch", "-m", old, new])
+}
+
+/// Create a tag. Annotated when `message` is non-empty, else lightweight.
+/// Tags the given `hash`, or HEAD when `hash` is empty.
+pub fn create_tag(repo: &str, name: &str, hash: &str, message: &str) -> Result<String, String> {
+    let mut args: Vec<&str> = vec!["tag"];
+    if !message.is_empty() {
+        args.push("-a");
+        args.push(name);
+        args.push("-m");
+        args.push(message);
+    } else {
+        args.push(name);
+    }
+    if !hash.is_empty() {
+        args.push(hash);
+    }
+    run_combined(repo, &args)
+}
+
+pub fn delete_tag(repo: &str, name: &str) -> Result<String, String> {
+    run_combined(repo, &["tag", "-d", name])
+}
+
+pub fn push_tag(repo: &str, remote: &str, name: &str) -> Result<String, String> {
+    run_combined(repo, &["push", remote, name])
+}
+
+/// Clone `url` into `dest` (an absolute path that must not yet exist).
+pub fn clone_repo(url: &str, dest: &str) -> Result<String, String> {
+    let output = Command::new("git")
+        .args(["clone", url, dest])
+        .output()
+        .map_err(|e| format!("failed to spawn git: {e}"))?;
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let combined = format!("{stdout}{stderr}");
+    if output.status.success() {
+        Ok(combined)
+    } else {
+        Err(combined)
+    }
+}
+
+// ---------- Remote management ----------
+
+pub fn remotes_verbose(repo: &str) -> Result<Vec<RemoteInfo>, String> {
+    let raw = run(repo, &["remote", "-v"])?;
+    let mut seen: Vec<RemoteInfo> = Vec::new();
+    for line in raw.lines() {
+        // format: "origin\thttps://...(fetch)"
+        let mut parts = line.split_whitespace();
+        let (Some(name), Some(url)) = (parts.next(), parts.next()) else { continue };
+        if !seen.iter().any(|r| r.name == name) {
+            seen.push(RemoteInfo { name: name.to_string(), url: url.to_string() });
+        }
+    }
+    Ok(seen)
+}
+
+pub fn remote_add(repo: &str, name: &str, url: &str) -> Result<String, String> {
+    run_combined(repo, &["remote", "add", name, url])
+}
+
+pub fn remote_remove(repo: &str, name: &str) -> Result<String, String> {
+    run_combined(repo, &["remote", "remove", name])
+}
+
+pub fn remote_rename(repo: &str, old: &str, new: &str) -> Result<String, String> {
+    run_combined(repo, &["remote", "rename", old, new])
+}
+
+pub fn remote_set_url(repo: &str, name: &str, url: &str) -> Result<String, String> {
+    run_combined(repo, &["remote", "set-url", name, url])
+}
+
+// ---------- Reflog ----------
+
+pub fn reflog(repo: &str, limit: u32) -> Result<Vec<ReflogEntry>, String> {
+    let unit = '\u{1f}';
+    let fmt = format!("--format=%gD{u}%H{u}%h{u}%gs", u = unit);
+    let raw = run(
+        repo,
+        &["reflog", &fmt, &format!("-n{}", limit)],
+    )?;
+    let mut out = Vec::new();
+    for line in raw.lines() {
+        let f: Vec<&str> = line.split(unit).collect();
+        if f.len() < 4 {
+            continue;
+        }
+        out.push(ReflogEntry {
+            selector: f[0].to_string(),
+            hash: f[1].to_string(),
+            short: f[2].to_string(),
+            subject: f[3].to_string(),
+        });
+    }
+    Ok(out)
+}
+
+// ---------- Clean (remove untracked) ----------
+
+/// Preview what `git clean` would remove (untracked files + dirs).
+pub fn clean_preview(repo: &str) -> Result<Vec<String>, String> {
+    let raw = run(repo, &["clean", "-nd"])?;
+    Ok(raw
+        .lines()
+        .filter_map(|l| l.strip_prefix("Would remove ").map(|s| s.to_string()))
+        .collect())
+}
+
+pub fn clean(repo: &str, include_ignored: bool) -> Result<String, String> {
+    if include_ignored {
+        run_combined(repo, &["clean", "-fdx"])
+    } else {
+        run_combined(repo, &["clean", "-fd"])
+    }
+}
+
+// ---------- Repo config / settings ----------
+
+pub fn get_config(repo: &str, key: &str) -> Result<String, String> {
+    // Missing key → empty string rather than error.
+    match run(repo, &["config", "--local", "--get", key]) {
+        Ok(v) => Ok(v.trim().to_string()),
+        Err(_) => Ok(String::new()),
+    }
+}
+
+/// Effective config value: local overrides global overrides system.
+/// Missing key → empty string.
+pub fn get_config_effective(repo: &str, key: &str) -> Result<String, String> {
+    match run(repo, &["config", "--get", key]) {
+        Ok(v) => Ok(v.trim().to_string()),
+        Err(_) => Ok(String::new()),
+    }
+}
+
+pub fn set_config(repo: &str, key: &str, value: &str) -> Result<String, String> {
+    if value.is_empty() {
+        // Unset (ignore error if not set).
+        let _ = run(repo, &["config", "--local", "--unset", key]);
+        Ok(String::new())
+    } else {
+        run_combined(repo, &["config", "--local", key, value])
+    }
+}
+
+// ---------- Reword HEAD ----------
+
+/// Change HEAD's commit message without touching the tree/index.
+pub fn reword_head(repo: &str, message: &str) -> Result<String, String> {
+    run_combined(repo, &["commit", "--amend", "-m", message, "--only", "--allow-empty"])
+}
+
+// ---------- Pull options / fetch remote ----------
+
+pub fn pull_opts(repo: &str, rebase: bool) -> Result<String, String> {
+    let upstream = run(repo, &["rev-parse", "--abbrev-ref", "@{u}"]);
+    if upstream.is_err() {
+        return Ok("No remote tracking branch — nothing to pull.".into());
+    }
+    if rebase {
+        run_combined(repo, &["pull", "--rebase"])
+    } else {
+        run_combined(repo, &["pull", "--no-rebase"])
+    }
+}
+
+pub fn fetch_remote(repo: &str, remote: &str) -> Result<String, String> {
+    run_combined(repo, &["fetch", "--prune", remote])
+}
+
+// ---------- Branch from stash ----------
+
+pub fn stash_branch(repo: &str, name: &str, index: usize) -> Result<String, String> {
+    run_combined(repo, &["stash", "branch", name, &format!("stash@{{{index}}}")])
+}
+
+// ---------- File history ----------
+
+pub fn log_file(repo: &str, path: &str, limit: u32) -> Result<Vec<CommitInfo>, String> {
+    log_custom(repo, &["log", "--follow", &format!("-n{}", limit), "--", path])
+}
+
+// ---------- Compare two refs ----------
+
+pub fn compare_files(repo: &str, from: &str, to: &str) -> Result<Vec<DiffFile>, String> {
+    let range = format!("{from}..{to}");
+    let raw = run(repo, &["diff", "--name-status", &range])?;
+    let mut out = Vec::new();
+    for line in raw.lines() {
+        let mut parts = line.split('\t');
+        let (Some(st), Some(p)) = (parts.next(), parts.next()) else { continue };
+        out.push(DiffFile {
+            status: st.chars().next().unwrap_or('M').to_string(),
+            path: parts.last().unwrap_or(p).to_string(),
+        });
+    }
+    Ok(out)
+}
+
+pub fn compare_file_diff(repo: &str, from: &str, to: &str, path: &str) -> Result<String, String> {
+    let range = format!("{from}..{to}");
+    run(repo, &["diff", &range, "--", path])
+}
+
+// ---------- Advanced history search ----------
+
+pub fn log_search(
+    repo: &str,
+    author: &str,
+    grep: &str,
+    pickaxe: &str,
+    limit: u32,
+    all: bool,
+) -> Result<Vec<CommitInfo>, String> {
+    let n = format!("-n{}", limit);
+    let mut args: Vec<String> = vec!["log".into(), n];
+    if all {
+        args.push("--all".into());
+    }
+    if !author.is_empty() {
+        args.push(format!("--author={author}"));
+    }
+    if !grep.is_empty() {
+        args.push(format!("--grep={grep}"));
+        args.push("-i".into());
+    }
+    if !pickaxe.is_empty() {
+        args.push(format!("-S{pickaxe}"));
+    }
+    let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    log_custom(repo, &refs)
+}
+
+// ---------- Partial (hunk) staging ----------
+
+pub fn stage_hunk(repo: &str, patch: &str) -> Result<String, String> {
+    run_stdin(repo, &["apply", "--cached", "--whitespace=nowarn", "-"], patch)
+}
+
+pub fn unstage_hunk(repo: &str, patch: &str) -> Result<String, String> {
+    run_stdin(repo, &["apply", "--cached", "--reverse", "--whitespace=nowarn", "-"], patch)
+}
+
+pub fn discard_hunk(repo: &str, patch: &str) -> Result<String, String> {
+    run_stdin(repo, &["apply", "--reverse", "--whitespace=nowarn", "-"], patch)
+}
+
+// ---------- Interactive rebase (scripted) ----------
+
+/// Rewrite a specific commit's message (reword), including non-HEAD commits,
+/// via a non-interactive rebase driven by env-var editors.
+pub fn reword_commit(repo: &str, hash: &str, message: &str) -> Result<String, String> {
+    rebase_edit(repo, hash, "reword", Some(message))
+}
+
+/// Drop a commit from history.
+pub fn drop_commit(repo: &str, hash: &str) -> Result<String, String> {
+    rebase_edit(repo, hash, "drop", None)
+}
+
+/// Squash a commit into its parent (combine with previous).
+pub fn squash_commit(repo: &str, hash: &str) -> Result<String, String> {
+    rebase_edit(repo, hash, "squash", None)
+}
+
+/// Run `git rebase -i <hash>^` with scripted sequence/commit editors so the
+/// given action is applied to `hash` without opening a real editor.
+fn rebase_edit(repo: &str, hash: &str, action: &str, message: Option<&str>) -> Result<String, String> {
+    use std::process::Stdio;
+    // Short hash to match in the rebase todo list.
+    let short = run(repo, &["rev-parse", "--short", hash])?.trim().to_string();
+    // Sequence editor: change the "pick <short>" line to "<action> <short>".
+    // Uses a portable sed invocation.
+    let seq_editor = format!(
+        "sed -i.bak -e 's/^pick {short}/{action} {short}/'"
+    );
+    let mut cmd = Command::new("git");
+    cmd.arg("-C").arg(repo).args(["rebase", "-i", &format!("{hash}^")]);
+    cmd.env("GIT_SEQUENCE_EDITOR", &seq_editor);
+    if let Some(msg) = message {
+        // Commit-message editor: overwrite the message file with the new text.
+        // Write msg to a temp file and cat it into the target.
+        let tmp = std::env::temp_dir().join(format!("slimgit-reword-{}.txt", std::process::id()));
+        std::fs::write(&tmp, msg).map_err(|e| format!("tmp write: {e}"))?;
+        let editor = format!("cp {} ", shell_quote(tmp.to_string_lossy().as_ref()));
+        cmd.env("GIT_EDITOR", editor);
+    } else {
+        cmd.env("GIT_EDITOR", "true");
+    }
+    let output = cmd
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("failed to spawn git: {e}"))?;
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let combined = format!("{stdout}{stderr}");
+    if output.status.success() {
+        Ok(combined)
+    } else {
+        // Abort a half-applied rebase so the repo isn't left mid-operation.
+        let _ = run(repo, &["rebase", "--abort"]);
+        Err(combined)
+    }
+}
+
+fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
 }
 
 // ---------- Network ----------

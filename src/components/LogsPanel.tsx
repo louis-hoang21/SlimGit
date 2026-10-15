@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { Search, X, RotateCw } from "lucide-react";
-import { CommitInfo, BranchInfo, DiffFile } from "../types";
-import { computeGraph, GRAPH_COLORS, laneColor } from "../graph";
+import { Search, X, RotateCw, SlidersHorizontal } from "lucide-react";
+import { CommitInfo, BranchInfo, DiffFile, StatusResult } from "../types";
+import { computeGraph, GRAPH_COLORS, laneColor, rowTextOffset } from "../graph";
 import DiffView from "./DiffView";
 import ContextMenu from "./common/ContextMenu";
 import type { Menu } from "../ui-types";
@@ -12,14 +12,24 @@ interface Props {
   branches: BranchInfo[];
   currentBranch: string;
   dark: boolean;
+  status: StatusResult | null;
   onClose: () => void;
   onCherryPick: (hash: string) => Promise<void>;
   onRevert: (hash: string) => Promise<void>;
+  onReset: (hash: string, mode: "soft" | "mixed" | "hard") => void;
+  onCreateTag: (hash: string) => void;
+  onReword: (hash: string) => void;
+  onDrop: (hash: string) => void;
+  onSquash: (hash: string) => void;
+  onFileHistory: (path: string) => void;
+  // Working Tree row: refresh after staging actions, and open the commit modal.
+  onChanged: () => void;
+  onRequestCommit: () => void;
 }
 
-const ROW_H = 28;
-const COL_W = 18;
-const PAD = 12;
+const ROW_H = 24;
+const COL_W = 14;
+const PAD = 8;
 
 function fmtDate(ts: number): string {
   const d = new Date(ts * 1000);
@@ -58,16 +68,28 @@ function clamp(v: number, lo: number, hi: number) {
 }
 
 export default function LogsPanel({
-  repo, branches, currentBranch, dark, onClose, onCherryPick, onRevert,
+  repo, branches, currentBranch, dark, status, onClose, onCherryPick, onRevert, onReset, onCreateTag,
+  onReword, onDrop, onSquash, onFileHistory, onChanged, onRequestCommit,
 }: Props) {
   const [selectedBranch, setSelectedBranch] = useState(currentBranch);
+  // SmartGit's Log defaults to HEAD only (Branches panel: just HEAD checked) —
+  // the current branch's full graph with its merged-in branches as side lanes.
   const [allBranches, setAllBranches] = useState(false);
   const [commits, setCommits] = useState<CommitInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
 
+  // Advanced history search (git log --author / --grep / -S pickaxe).
+  const [showSearch, setShowSearch] = useState(false);
+  const [author, setAuthor] = useState("");
+  const [grep, setGrep] = useState("");
+  const [pickaxe, setPickaxe] = useState("");
+  const hasSearch = Boolean(author.trim() || grep.trim() || pickaxe.trim());
+
   // Selection
   const [selectedHash, setSelectedHash] = useState<string | null>(null);
+  const [wtSelected, setWtSelected] = useState(false);
+  const [message, setMessage] = useState("");
   const [files, setFiles] = useState<DiffFile[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [diffText, setDiffText] = useState("");
@@ -76,6 +98,13 @@ export default function LogsPanel({
 
   // Context menu
   const [menu, setMenu] = useState<Menu | null>(null);
+
+  // Virtual scroll + incremental load for deep histories.
+  const [limit, setLimit] = useState(1000);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewH, setViewH] = useState(600);
+  const graphScrollRef = useRef<HTMLDivElement | null>(null);
+  const loadingMoreRef = useRef(false);
 
   // --- Resize state ---
   // Panel (modal) size
@@ -122,22 +151,34 @@ export default function LogsPanel({
     };
   }, [onMouseMove, stopDrag]);
 
-  // --- Data loading ---
+  // --- Data loading --- (keeps selection; load-more just raises `limit`)
   const loadCommits = useCallback(async () => {
     setLoading(true);
-    setSelectedHash(null);
-    setFiles([]);
-    setDiffText("");
     try {
-      const result = allBranches
-        ? await api.logGraph(repo, 500, true)
-        : await api.logBranch(repo, selectedBranch, 500);
+      const result = hasSearch
+        ? await api.logSearch(repo, author.trim(), grep.trim(), pickaxe.trim(), limit, allBranches)
+        : allBranches
+        ? await api.logGraph(repo, limit, true)
+        : await api.logBranch(repo, selectedBranch, limit);
       setCommits(result);
     } catch (e) { console.error(e); }
-    finally { setLoading(false); }
-  }, [repo, selectedBranch, allBranches]);
+    finally { setLoading(false); loadingMoreRef.current = false; }
+  }, [repo, selectedBranch, allBranches, hasSearch, author, grep, pickaxe, limit]);
 
   useEffect(() => { loadCommits(); }, [loadCommits]);
+
+  // Changing branch / search resets the view (selection + scroll), but a
+  // load-more (limit bump) must not — so clear only on those changes.
+  useEffect(() => {
+    setSelectedHash(null);
+    setWtSelected(false);
+    setFiles([]);
+    setDiffText("");
+    setLimit(1000);
+    if (graphScrollRef.current) graphScrollRef.current.scrollTop = 0;
+    setScrollTop(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBranch, allBranches, hasSearch]);
 
   // Close on Escape
   useEffect(() => {
@@ -165,10 +206,13 @@ export default function LogsPanel({
   }, [commits, query]);
 
   async function selectCommit(hash: string) {
+    setWtSelected(false);
     setSelectedHash(hash);
     setFiles([]);
     setDiffText("");
     setSelectedFile(null);
+    setMessage("");
+    api.commitMessage(repo, hash).then(setMessage).catch(() => setMessage(""));
     setLoadingFiles(true);
     try {
       const fs = await api.commitFiles(repo, hash);
@@ -195,6 +239,49 @@ export default function LogsPanel({
     finally { setLoadingDiff(false); }
   }
 
+  // ----- Working Tree (uncommitted changes) -----
+  function selectWorkingTree() {
+    setSelectedHash(null);
+    setWtSelected(true);
+    setMessage("");
+    setSelectedFile(null);
+    setDiffText("");
+  }
+
+  // Files of the working tree, taken from the live status prop.
+  const wtFiles: DiffFile[] = useMemo(
+    () =>
+      (status?.files ?? []).map((f) => ({
+        path: f.path,
+        status: (f.staged ? f.index_status : f.worktree_status) || "M",
+      })),
+    [status]
+  );
+
+  async function selectWtFile(f: { path: string; staged: boolean; untracked: boolean }) {
+    setSelectedFile(f.path);
+    setDiffText("");
+    setLoadingDiff(true);
+    try {
+      setDiffText(await api.diff(repo, f.path, f.staged, f.untracked));
+    } catch (e) { console.error(e); }
+    finally { setLoadingDiff(false); }
+  }
+
+  function wtFileMenu(path: string, staged: boolean, x: number, y: number) {
+    setMenu({
+      x, y,
+      items: [
+        staged
+          ? { label: "Unstage", run: () => api.unstage(repo, [path]).then(onChanged) }
+          : { label: "Stage", run: () => api.stage(repo, [path]).then(onChanged) },
+        { label: "Discard", danger: true, run: () => api.discard(repo, [path], false).then(onChanged) },
+        { sep: true },
+        { label: "File History", run: () => onFileHistory(path) },
+      ],
+    });
+  }
+
   function openMenu(hash: string, x: number, y: number) {
     const c = filteredCommits.find((k) => k.hash === hash);
     setMenu({
@@ -205,6 +292,15 @@ export default function LogsPanel({
           label: "Revert Commit", danger: true,
           run: () => onRevert(hash),
         },
+        { label: "Create Tag here…", run: () => onCreateTag(hash) },
+        { sep: true },
+        { label: "Reword…", run: () => onReword(hash) },
+        { label: "Squash into previous", run: () => onSquash(hash) },
+        { label: "Drop commit", danger: true, run: () => onDrop(hash) },
+        { sep: true },
+        { label: `Reset ${currentBranch} to here — Soft`, run: () => onReset(hash, "soft") },
+        { label: "Reset to here — Mixed", run: () => onReset(hash, "mixed") },
+        { label: "Reset to here — Hard (discard)", danger: true, run: () => onReset(hash, "hard") },
         { sep: true },
         { label: "Copy Commit ID", run: () => navigator.clipboard.writeText(hash) },
         { label: "Copy Message", run: () => navigator.clipboard.writeText(c?.subject ?? "") },
@@ -218,15 +314,37 @@ export default function LogsPanel({
   const totalH = filteredCommits.length * ROW_H;
   const nodeCol = new Map(layout.nodes.map((n) => [n.commit.hash, n.col]));
 
+  // Virtual window: only render rows/edges/nodes near the viewport.
+  const BUFFER = 12;
+  const visFirst = Math.max(0, Math.floor(scrollTop / ROW_H) - BUFFER);
+  const visLast = Math.min(filteredCommits.length, Math.ceil((scrollTop + viewH) / ROW_H) + BUFFER);
+
+  function onGraphScroll(e: React.UIEvent<HTMLDivElement>) {
+    const el = e.currentTarget;
+    setScrollTop(el.scrollTop);
+    if (el.clientHeight !== viewH) setViewH(el.clientHeight);
+    // Load more when near the bottom and the current page is full.
+    if (
+      !loading &&
+      !loadingMoreRef.current &&
+      commits.length >= limit &&
+      el.scrollTop + el.clientHeight > el.scrollHeight - 600
+    ) {
+      loadingMoreRef.current = true;
+      setLimit((l) => l + 2000);
+    }
+  }
+
   const localBranches = branches.filter((b) => !b.is_remote);
   const remoteBranches = branches.filter((b) => b.is_remote);
 
-  // Body height = panel height - header(42) - col-header(28)
+  // Body = panel height - header(42) - advanced-search bar (when shown).
   const HEADER_H = 42;
-  const COL_HDR_H = 28;
-  const bodyH = panelH - HEADER_H - COL_HDR_H;
-  const graphH = Math.round(bodyH * graphFrac);
-  const detailH = bodyH - graphH - 4; // 4 = splitter
+  const ADV_H = showSearch ? 44 : 0;
+  const bodyH = panelH - HEADER_H - ADV_H;
+  // Top area (graph + detail/files) vs bottom diff, split by graphFrac.
+  const topH = Math.round((bodyH - 4) * graphFrac);
+  const bottomH = bodyH - topH - 4; // 4 = splitter
 
   return (
     <div className="modal-back" onClick={onClose}>
@@ -284,85 +402,236 @@ export default function LogsPanel({
             />
           </div>
 
+          <button
+            className={`logs-search-toggle ${showSearch || hasSearch ? "active" : ""}`}
+            title="Advanced history search"
+            onClick={() => setShowSearch((s) => !s)}
+          >
+            <SlidersHorizontal size={14} />
+          </button>
+
         </div>
 
-        {/* ── Column headers ── */}
+        {showSearch && (
+          <div className="logs-adv">
+            <input
+              className="logs-adv-inp"
+              placeholder="Author"
+              value={author}
+              onChange={(e) => setAuthor(e.target.value)}
+            />
+            <input
+              className="logs-adv-inp"
+              placeholder="Message (grep)"
+              value={grep}
+              onChange={(e) => setGrep(e.target.value)}
+            />
+            <input
+              className="logs-adv-inp"
+              placeholder="Content changes (pickaxe -S)"
+              value={pickaxe}
+              onChange={(e) => setPickaxe(e.target.value)}
+            />
+            {hasSearch && (
+              <button
+                className="logs-adv-clear"
+                onClick={() => { setAuthor(""); setGrep(""); setPickaxe(""); }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* ── Body: top (graph | detail+files) over bottom (diff) ── */}
+        <div className="logs-body">
+        <div className="logs-top" style={{ height: topH }}>
+        <div className="logs-graph-pane">
+        {/* Column headers */}
         <div className="logs-cols-hd">
           <span style={{ flex: 1 }}>Graph / Message</span>
-          <span style={{ width: 130 }}>Author</span>
-          <span style={{ width: 58 }}>Hash</span>
-          <span style={{ width: 150, textAlign: "right" }}>Date</span>
+          <span style={{ width: 150 }}>Author</span>
+          <span style={{ width: 140, textAlign: "right" }}>Date</span>
         </div>
 
-        {/* ── Graph (top) ── */}
-        <div className="logs-graph-wrap" style={{ height: graphH }}>
+        {/* Working Tree row (fixed above the scrollable graph) */}
+        <div
+          className={`logs-wt-row ${wtSelected ? "sel" : ""}`}
+          onClick={selectWorkingTree}
+        >
+          <span className="logs-wt-ico">◍</span>
+          <b>Working Tree</b>
+          <span className="logs-wt-note">{status ? `${status.files.length} change(s)` : ""}</span>
+        </div>
+
+        {/* ── Graph (virtualized) ── */}
+        <div className="logs-graph-scroll" ref={graphScrollRef} onScroll={onGraphScroll}>
           {loading && commits.length === 0 ? (
             <div className="logs-empty">Loading…</div>
           ) : filteredCommits.length === 0 ? (
             <div className="logs-empty">No commits found.</div>
           ) : (
-            <div className="graph" style={{ height: totalH }}>
+            <div className="graph" style={{ height: totalH, position: "relative" }}>
               <svg
                 className="graph-svg"
                 width={graphW}
                 height={totalH}
                 style={{ position: "absolute", top: 0, left: 0 }}
               >
-                {layout.edges.map((e, i) => {
-                  const x1 = e.x1 * COL_W + COL_W / 2 + PAD / 2;
-                  const y1 = e.y1 * ROW_H + ROW_H / 2;
-                  const x2 = e.x2 * COL_W + COL_W / 2 + PAD / 2;
-                  const y2 = e.y2 * ROW_H + ROW_H / 2;
-                  const d = x1 === x2
-                    ? `M ${x1} ${y1} L ${x2} ${y2}`
-                    : `M ${x1} ${y1} C ${x1} ${y1 + ROW_H * 0.6}, ${x2} ${y1 + ROW_H * 0.4}, ${x2} ${y1 + ROW_H} L ${x2} ${y2}`;
-                  return <path key={i} d={d} fill="none" stroke={GRAPH_COLORS[e.color]} strokeWidth={2} />;
-                })}
-                {layout.nodes.map((n) => (
-                  <circle
-                    key={n.commit.hash}
-                    cx={n.col * COL_W + COL_W / 2 + PAD / 2}
-                    cy={n.row * ROW_H + ROW_H / 2}
-                    r={5}
-                    fill={laneColor(n.col)}
-                    stroke="var(--graph-stroke)"
-                    strokeWidth={1.5}
-                  />
-                ))}
+                {layout.edges
+                  .filter((e) => e.y1 <= visLast && e.y2 >= visFirst)
+                  .map((e, i) => {
+                    const x1 = e.x1 * COL_W + COL_W / 2 + PAD / 2;
+                    const y1 = e.y1 * ROW_H + ROW_H / 2;
+                    const x2 = e.x2 * COL_W + COL_W / 2 + PAD / 2;
+                    const y2 = e.y2 * ROW_H + ROW_H / 2;
+                    const d = x1 === x2
+                      ? `M ${x1} ${y1} L ${x2} ${y2}`
+                      : `M ${x1} ${y1} C ${x1} ${y1 + ROW_H * 0.5}, ${x2} ${y1 + ROW_H * 0.5}, ${x2} ${y1 + ROW_H} L ${x2} ${y2}`;
+                    return <path key={i} d={d} fill="none" stroke={GRAPH_COLORS[e.color]} strokeWidth={1.6} />;
+                  })}
+                {layout.nodes
+                  .filter((n) => n.row >= visFirst && n.row <= visLast)
+                  .map((n) => (
+                    <circle
+                      key={n.commit.hash}
+                      cx={n.col * COL_W + COL_W / 2 + PAD / 2}
+                      cy={n.row * ROW_H + ROW_H / 2}
+                      r={4}
+                      fill="var(--graph-stroke)"
+                      stroke={laneColor(n.col)}
+                      strokeWidth={2}
+                    />
+                  ))}
               </svg>
 
-              <div className="graph-rows">
-                {filteredCommits.map((c) => {
-                  const badges = refBadges(c.refs);
-                  const col = nodeCol.get(c.hash) ?? 0;
-                  return (
-                    <div
-                      key={c.hash}
-                      className={`grow ${selectedHash === c.hash ? "sel" : ""}`}
-                      style={{ height: ROW_H, paddingLeft: graphW }}
-                      onClick={() => selectCommit(c.hash)}
-                      onContextMenu={(e) => { e.preventDefault(); openMenu(c.hash, e.clientX, e.clientY); }}
-                    >
-                      <span className="c-subject">
-                        {badges.map((b, k) => (
-                          <span key={k} className={b.cls} style={b.cls === "ref ref-head" ? { borderColor: laneColor(col) } : undefined}>
-                            {b.label}
-                          </span>
-                        ))}
-                        {c.subject}
-                      </span>
-                      <span className="c-author">{c.author}</span>
-                      <span className="c-hash">{c.short}</span>
-                      <span className="c-date">{fmtDate(c.timestamp)}</span>
-                    </div>
-                  );
-                })}
-              </div>
+              {filteredCommits.slice(visFirst, visLast).map((c, idx) => {
+                const row = visFirst + idx;
+                const badges = refBadges(c.refs);
+                const col = nodeCol.get(c.hash) ?? 0;
+                const isMerge = c.parents.length > 1;
+                return (
+                  <div
+                    key={c.hash}
+                    className={`grow ${selectedHash === c.hash ? "sel" : ""} ${isMerge ? "merge" : ""}`}
+                    style={{ position: "absolute", top: row * ROW_H, left: 0, right: 0, height: ROW_H, paddingLeft: rowTextOffset(layout, row, COL_W, PAD) }}
+                    onClick={() => selectCommit(c.hash)}
+                    onContextMenu={(e) => { e.preventDefault(); openMenu(c.hash, e.clientX, e.clientY); }}
+                  >
+                    <span className="c-subject">
+                      {badges.map((b, k) => (
+                        <span key={k} className={b.cls} style={b.cls === "ref ref-head" ? { borderColor: laneColor(col) } : undefined}>
+                          {b.label}
+                        </span>
+                      ))}
+                      {c.subject}
+                    </span>
+                    <span className="c-author" style={{ width: 150 }}>{c.author}</span>
+                    <span className="c-date" style={{ width: 140 }}>{fmtDate(c.timestamp)}</span>
+                  </div>
+                );
+              })}
             </div>
           )}
-        </div>
+        </div>{/* logs-graph-scroll */}
+        </div>{/* logs-graph-pane */}
 
-        {/* ── Vertical splitter ── */}
+        {/* vertical divider: graph | right */}
+        <div
+          className="logs-hsplit"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            dragRef.current = { type: "h-split", startX: e.clientX, startFilesW: filesW };
+            document.body.style.cursor = "col-resize";
+            document.body.style.userSelect = "none";
+          }}
+        />
+
+        {/* RIGHT: commit detail + files */}
+        <div className="logs-right" style={{ width: filesW }}>
+          {wtSelected ? (
+            <div className="logs-commit-detail">
+              <div className="lcd-line">
+                <b>Working Tree</b>
+                <span className="lcd-meta">{status ? `${status.files.length} change(s)` : ""}</span>
+              </div>
+              <div className="lcd-actions">
+                <button className="primary" onClick={onRequestCommit}>Commit…</button>
+                <button onClick={() => api.stageAll(repo).then(onChanged)}>Stage All</button>
+              </div>
+            </div>
+          ) : selectedHash ? (() => {
+            const selC = filteredCommits.find((k) => k.hash === selectedHash);
+            return (
+              <div className="logs-commit-detail">
+                <div className="lcd-line">
+                  <span className="lcd-hash">{selC?.short ?? selectedHash.slice(0, 8)}</span>
+                  {selC && (
+                    <span className="lcd-meta">
+                      {selC.author} · {fmtDate(selC.timestamp)}
+                      {selC.parents.length > 0 && (
+                        <> · parent {selC.parents.map((p) => p.slice(0, 7)).join(", ")}</>
+                      )}
+                    </span>
+                  )}
+                </div>
+                <pre className="lcd-msg">{message || selC?.subject || ""}</pre>
+              </div>
+            );
+          })() : (
+            <div className="logs-commit-detail logs-detail-empty-box">Select a commit or Working Tree</div>
+          )}
+
+          <div className="logs-files-pane">
+            <div className="logs-pane-hd">
+              Files {wtSelected ? `(${wtFiles.length})` : loadingFiles ? "…" : `(${files.length})`}
+            </div>
+            <div className="logs-files-scroll">
+              {wtSelected ? (
+                wtFiles.length ? (
+                  wtFiles.map((f) => {
+                    const src = status?.files.find((x) => x.path === f.path);
+                    const label = statusLabel(f.status);
+                    return (
+                      <div
+                        key={f.path}
+                        className={`logs-file-row ${selectedFile === f.path ? "sel" : ""}`}
+                        onClick={() => selectWtFile({ path: f.path, staged: Boolean(src?.staged), untracked: Boolean(src?.untracked) })}
+                        onContextMenu={(e) => { e.preventDefault(); wtFileMenu(f.path, Boolean(src?.staged), e.clientX, e.clientY); }}
+                      >
+                        <span className={`fdot dot-${label}`} />
+                        <span className={`logs-file-name state-${label}`} title={f.path}>{f.path.split("/").pop()}</span>
+                        {src?.staged && <span className="staged-flag">●</span>}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="logs-empty" style={{ height: 40 }}>No changes</div>
+                )
+              ) : files.length ? (
+                files.map((f) => {
+                  const label = statusLabel(f.status);
+                  return (
+                    <div
+                      key={f.path}
+                      className={`logs-file-row ${selectedFile === f.path ? "sel" : ""}`}
+                      onClick={() => selectFile(f.path)}
+                      onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, items: [{ label: "File History", run: () => onFileHistory(f.path) }] }); }}
+                    >
+                      <span className={`fdot dot-${label}`} />
+                      <span className={`logs-file-name state-${label}`} title={f.path}>{f.path.split("/").pop()}</span>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="logs-empty" style={{ height: 40 }}>{loadingFiles ? "…" : selectedHash ? "No files" : ""}</div>
+              )}
+            </div>
+          </div>
+        </div>{/* logs-right */}
+        </div>{/* logs-top */}
+
+        {/* horizontal divider: top | bottom */}
         <div
           className="logs-vsplit"
           onMouseDown={(e) => {
@@ -373,64 +642,18 @@ export default function LogsPanel({
           }}
         />
 
-        {/* ── Detail row: files + diff ── */}
-        {selectedHash && (
-          <div className="logs-detail" style={{ height: detailH }}>
-            {/* Files panel */}
-            <div className="logs-files" style={{ width: filesW }}>
-              <div className="logs-pane-hd">Changed Files{loadingFiles ? " …" : ` (${files.length})`}</div>
-              <div className="logs-files-scroll">
-                {files.map((f) => {
-                  const label = statusLabel(f.status);
-                  return (
-                    <div
-                      key={f.path}
-                      className={`logs-file-row ${selectedFile === f.path ? "sel" : ""}`}
-                      onClick={() => selectFile(f.path)}
-                    >
-                      <span className={`fdot dot-${label}`} />
-                      <span className={`logs-file-name state-${label}`} title={f.path}>
-                        {f.path.split("/").pop()}
-                      </span>
-                    </div>
-                  );
-                })}
-                {!loadingFiles && files.length === 0 && (
-                  <div className="logs-empty" style={{ height: 40 }}>No files</div>
-                )}
-              </div>
-            </div>
-
-            {/* Horizontal splitter */}
-            <div
-              className="logs-hsplit"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                dragRef.current = { type: "h-split", startX: e.clientX, startFilesW: filesW };
-                document.body.style.cursor = "col-resize";
-                document.body.style.userSelect = "none";
-              }}
-            />
-
-            {/* Diff panel */}
-            <div className="logs-diff" style={{ flex: 1, overflow: "hidden" }}>
-              <div className="logs-pane-hd">{selectedFile ?? "Diff"}</div>
-              <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
-                {loadingDiff ? (
-                  <div className="logs-empty">Loading…</div>
-                ) : (
-                  <DiffView diff={diffText} theme={dark ? "dark" : "light"} />
-                )}
-              </div>
-            </div>
+        {/* BOTTOM: diff */}
+        <div className="logs-bottom" style={{ height: bottomH }}>
+          <div className="logs-pane-hd">{selectedFile ? `Changes of ${selectedFile.split("/").pop()}` : "Changes"}</div>
+          <div className="logs-bottom-diff">
+            {loadingDiff ? (
+              <div className="logs-empty">Loading…</div>
+            ) : (
+              <DiffView diff={diffText} theme={dark ? "dark" : "light"} layout="split" />
+            )}
           </div>
-        )}
-
-        {!selectedHash && (
-          <div className="logs-detail logs-detail-empty" style={{ height: detailH }}>
-            <span>Select a commit to view changed files</span>
-          </div>
-        )}
+        </div>
+        </div>{/* logs-body */}
 
         {/* ── SE resize handle ── */}
         <div

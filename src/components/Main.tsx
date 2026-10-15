@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { BranchInfo, CommitInfo, StashInfo, StatusResult } from "../types";
 import type { BNode, Row, RepoRef, RepoSortKey } from "../ui-types";
+import type { HunkAction } from "./DiffView";
 import RepositoriesPanel from "./left-side/RepositoriesPanel";
 import BranchesPanel from "./left-side/BranchesPanel";
 import FilesPanel from "./right-side/FilesPanel";
@@ -12,7 +13,12 @@ export interface MainProps {
   repoGroups: Record<string, RepoRef[]>;
   repo: string;
   onSwitchRepo: (path: string) => void;
-  onRemoveRepo: (path: string) => void;
+  onRemoveRepos: (paths: string[]) => void;
+  onOpenInNewWindow: (path: string) => void;
+  onRenameRepo: (path: string) => void;
+  onOpenRepoLog: (path: string) => void;
+  groupLabels: Record<string, string>;
+  onRenameGroup: (parent: string) => void;
   repoSort: RepoSortKey;
   onRepoSortChange: (sort: RepoSortKey) => void;
 
@@ -57,6 +63,8 @@ export interface MainProps {
   compareDiff: string;
   compareBase: string | null;
   dark: boolean;
+  hunkMode: "staged" | "unstaged" | null;
+  onHunkAction: (patch: string, action: HunkAction) => void;
 
   // ---------- Journal ----------
   journalH: number;
@@ -69,7 +77,7 @@ export interface MainProps {
 }
 
 export default function Main({
-  repoGroups, repo, onSwitchRepo, onRemoveRepo, repoSort, onRepoSortChange,
+  repoGroups, repo, onSwitchRepo, onRemoveRepos, onOpenInNewWindow, onRenameRepo, onOpenRepoLog, groupLabels, onRenameGroup, repoSort, onRepoSortChange,
   collapsedGroups, onToggleGroup, localBranchCount, localTree, remoteTrees,
   remoteGroups, renderBranchNodes, tags, onTagCheckout, onTagContext,
   stashes, stashSel, onSelectStash, onStashContext,
@@ -77,7 +85,7 @@ export default function Main({
   onStartColDrag, fileQuery, onFileQueryChange, onFilesKeyDown,
   selPath, selPaths, onSelectRow, onFileContext,
   conflictFile, onConflictResolved, journalSel, status, diffText,
-  compareDiff, compareBase, dark,
+  compareDiff, compareBase, dark, hunkMode, onHunkAction,
   journalH, journalQuery, onJournalQueryChange, onSelectWorkingTree,
   filteredCommits, onSelectCommit, onCommitContext,
 }: MainProps) {
@@ -88,7 +96,12 @@ export default function Main({
           repoGroups={repoGroups}
           repo={repo}
           onSwitchRepo={onSwitchRepo}
-          onRemoveRepo={onRemoveRepo}
+          onRemoveRepos={onRemoveRepos}
+          onOpenInNewWindow={onOpenInNewWindow}
+          onRenameRepo={onRenameRepo}
+          onOpenRepoLog={onOpenRepoLog}
+          groupLabels={groupLabels}
+          onRenameGroup={onRenameGroup}
           repoSort={repoSort}
           onRepoSortChange={onRepoSortChange}
         />
@@ -139,6 +152,8 @@ export default function Main({
           compareDiff={compareDiff}
           compareBase={compareBase}
           dark={dark}
+          hunkMode={hunkMode}
+          onHunkAction={onHunkAction}
         />
         <JournalPanel
           journalH={journalH}

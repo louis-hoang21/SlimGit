@@ -2,9 +2,10 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default capability set for SlimGit",
-  "windows": ["main"],
+  "windows": ["main", "repo-*"],
   "permissions": [
     "core:default",
+    "core:webview:allow-create-webview-window",
     "dialog:default",
     "dialog:allow-open"
   ]
